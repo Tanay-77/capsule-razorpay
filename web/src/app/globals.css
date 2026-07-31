@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f4f1e8;
+  color: #11120f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 92, 53, 0.16), transparent 30rem),
+    radial-gradient(circle at 88% 84%, rgba(75, 101, 68, 0.18), transparent 32rem),
+    #f4f1e8;
+}
+
+button,
+input {
+  font: inherit;
+}

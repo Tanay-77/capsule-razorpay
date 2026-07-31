@@ -1,0 +1,20 @@
+{
+  "name": "capsule",
+  "private": true,
+  "workspaces": [
+    "web",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,server -c cyan,magenta \"npm run dev -w web\" \"npm run dev -w server\"",
+    "build": "npm run build -w server && npm run build -w web",
+    "lint": "npm run lint -w web",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
