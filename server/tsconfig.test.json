@@ -4,5 +4,5 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src/**/*.ts", "prava/**/*.ts"]
+  "include": ["src/**/*.ts", "prava/**/*.ts", "agent/**/*.ts"]
 }

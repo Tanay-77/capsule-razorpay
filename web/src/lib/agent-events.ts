@@ -1,5 +1,6 @@
 ﻿export const AGENT_EVENT_TYPES = [
   'agent:intent_parsed',
+  'agent:intent_parse_attempt',
   'agent:state_changed',
   'agent:prava_request',
   'agent:session_created',

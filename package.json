@@ -11,7 +11,9 @@
     "lint": "npm run lint -w web",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "prava:health": "npm run prava:health -w server",
-    "prava:test": "npm run prava:test -w server"
+    "prava:test": "npm run prava:test -w server",
+    "agent:unit": "npm run agent:unit -w server",
+    "agent:test": "npm run agent:test -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

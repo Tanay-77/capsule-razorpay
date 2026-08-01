@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { agentEvents, type AgentEvent } from '../events/AgentEventEmitter.js';
 import { createAgentRun } from '../agent/runs.js';
 import { parseIntent } from '../agent/intent-parser.js';
+import { IntentParserValidationError } from '../agent/linear-pricing.js';
 
 export const agentRouter = Router();
 
@@ -56,8 +57,10 @@ agentRouter.post('/intent', async (req, res) => {
     run.context.events.publish(run.context.runId, 'agent:error', {
       phase: 'intent_parsing',
       message,
-      retryable: true,
+      retryable: !(error instanceof IntentParserValidationError),
     });
-    return res.status(500).json({ runId: run.context.runId, error: message });
+    return res
+      .status(error instanceof IntentParserValidationError ? 422 : 500)
+      .json({ runId: run.context.runId, error: message });
   }
 });

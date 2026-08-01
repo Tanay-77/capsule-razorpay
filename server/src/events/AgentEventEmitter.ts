@@ -3,11 +3,17 @@ import { randomUUID } from 'node:crypto';
 
 export interface AgentEventPayloads {
   'agent:intent_parsed': {
-    intent: string;
-    merchant?: string;
-    product?: string;
-    amount?: string;
-    currency?: string;
+    intent: 'purchase';
+    platform: 'Linear';
+    seatCount: number;
+    durationDays: number;
+    exactAmount: string;
+    tierName: 'Free' | 'Basic' | 'Business';
+  };
+  'agent:intent_parse_attempt': {
+    attempt: number;
+    model: string;
+    status: 'started' | 'succeeded' | 'validation_failed' | 'failed';
   };
   'agent:state_changed': { from: string; to: string };
   'agent:prava_request': {

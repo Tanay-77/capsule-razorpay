@@ -1,10 +1,10 @@
 ﻿export type PurchaseIntent = {
-  kind: 'purchase' | 'renewal' | 'unknown';
-  merchant?: string;
-  product?: string;
-  amount?: string;
-  currency?: string;
-  raw: string;
+  platform: 'Linear';
+  seatCount: number;
+  durationDays: number;
+  /** Provisional 30-day prorated estimate. Never send this value to Prava. */
+  exactAmount: string;
+  tierName: 'Free' | 'Basic' | 'Business';
 };
 
 export type AgentState =

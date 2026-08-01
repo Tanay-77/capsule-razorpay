@@ -57,6 +57,45 @@ Prava requires both `callback_url` and `purchase_context[0].merchant_details.url
 
 Progress goes through this emitter rather than `console.log`.
 
+## Phase 2 intent parser
+
+The `IntentParser` in `server/src/agent/intent-parser.ts` performs one OpenAI Responses API structured-output call under normal operation. It retries at most once, and only when the parsed data fails schema or business validation. The default is `gpt-5.6-terra` with low reasoning and a 350-token output ceiling; override it with `OPENAI_INTENT_MODEL` only after evaluating the same prompts.
+
+The API returns exactly:
+
+```json
+{
+  "platform": "Linear",
+  "seatCount": 3,
+  "durationDays": 10,
+  "exactAmount": "10.00",
+  "tierName": "Basic"
+}
+```
+
+Despite its required field name, `exactAmount` is a provisional preview estimate. It is calculated deterministically in integer cents from the currently published yearly-billed Linear rates: Free `$0`, Basic `$10/user/month`, and Business `$16/user/month`. For sprint previews, Capsule uses a synthetic 30-day proration (`monthly price × seats × durationDays ÷ 30`). Linear does not sell arbitrary day-length subscriptions, and its actual billing/proration rules depend on billing cadence and seat changes. Phase 3 must read the final amount, including tax and fees, from Linear's checkout before creating the locked Prava session. Never pass this Phase 2 estimate to Prava.
+
+Precision and spend safeguards:
+
+- The model extracts facts only; it never performs price arithmetic.
+- Missing seat count or duration fails instead of being guessed.
+- An unnamed tier defaults to Basic only when an explicit budget cap can be checked; otherwise the request is ambiguous.
+- Enterprise is rejected because its price is custom.
+- Budget caps are constraints, never interpreted as purchase amounts.
+- A normal parse makes one model call; validation permits one retry maximum.
+
+Run deterministic tests without API spend:
+
+```powershell
+npm run agent:unit
+```
+
+Run the five-prompt live evaluation (normally five calls; an ambiguous prompt can consume its one retry):
+
+```powershell
+npm run agent:test
+```
+
 ## Phase 1 sandbox lifecycle check
 
 The standalone runner uses the real hosted REST lifecycle without touching Linear:
