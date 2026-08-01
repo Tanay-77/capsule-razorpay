@@ -1,0 +1,713 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { chromium, type BrowserContext, type Frame, type Locator, type Page } from 'playwright';
+import type { AgentRun } from './runs.js';
+import type { AutomationMode, PurchaseIntent } from './types.js';
+import { PravaHostedClient } from '../prava/hosted-client.js';
+import type { OneTimeCredential, PaymentResultResponse } from '../prava/types.js';
+
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const DEFAULT_BILLING_URL = 'https://linear.app/settings/billing';
+const DEFAULT_MANUAL_TIMEOUT_MS = 10 * 60 * 1_000;
+const TOTAL_STABILITY_DELAY_MS = 1_250;
+
+export interface DisplayedMoney {
+  amount: string;
+  currency: string;
+}
+
+export type ProvisioningResult =
+  | { mode: 'mock'; amount: string; currency: 'USD' }
+  | { mode: 'dry-run'; amount: string; currency: string; sessionId: string; hostedUrl: string }
+  | { mode: 'real'; amount: string; currency: string; sessionId: string; screenshotPath: string };
+
+export interface LinearProvisionerOptions {
+  billingUrl?: string;
+  browserDataDir?: string;
+  artifactsDir?: string;
+  headless?: boolean;
+  devMode?: boolean;
+  manualTimeoutMs?: number;
+}
+
+export class LinearProvisioner {
+  private readonly billingUrl: string;
+  private readonly browserDataDir: string;
+  private readonly artifactsDir: string;
+  private readonly headless: boolean;
+  private readonly devMode: boolean;
+  private readonly manualTimeoutMs: number;
+  private activeBrowserRunId?: string;
+
+  constructor(options: LinearProvisionerOptions = {}) {
+    this.billingUrl = options.billingUrl ?? process.env.LINEAR_BILLING_URL ?? DEFAULT_BILLING_URL;
+    this.browserDataDir = path.resolve(
+      REPOSITORY_ROOT,
+      options.browserDataDir ?? process.env.LINEAR_BROWSER_DATA_DIR ?? '.browser-data',
+    );
+    this.artifactsDir = path.resolve(
+      REPOSITORY_ROOT,
+      options.artifactsDir ?? process.env.LINEAR_ARTIFACTS_DIR ?? 'artifacts/linear',
+    );
+    this.headless = options.headless ?? process.env.LINEAR_HEADLESS === 'true';
+    this.devMode = options.devMode ?? process.env.NODE_ENV !== 'production';
+    this.manualTimeoutMs = options.manualTimeoutMs ?? envPositiveInteger(
+      'LINEAR_MANUAL_TIMEOUT_MS',
+      DEFAULT_MANUAL_TIMEOUT_MS,
+    );
+  }
+
+  async provision(
+    run: AgentRun,
+    intent: PurchaseIntent,
+    requestedMode: AutomationMode,
+  ): Promise<ProvisioningResult> {
+    const mode: AutomationMode = process.env.ENABLE_MOCK_AGENT === 'true'
+      ? 'mock'
+      : requestedMode;
+    run.context.events.publish(run.context.runId, 'agent:automation_mode', { mode });
+
+    if (mode === 'mock') return this.runMock(run, intent);
+    if (this.activeBrowserRunId) {
+      const message = `The persistent Linear profile is already in use by run ${this.activeBrowserRunId}.`;
+      run.context.events.publish(run.context.runId, 'agent:error', {
+        phase: 'linear_browser_lock',
+        message,
+        retryable: true,
+      });
+      throw new Error(message);
+    }
+    this.activeBrowserRunId = run.context.runId;
+    try {
+      return await this.runBrowserFlow(run, intent, mode);
+    } finally {
+      this.activeBrowserRunId = undefined;
+    }
+  }
+
+  private async runMock(run: AgentRun, intent: PurchaseIntent): Promise<ProvisioningResult> {
+    const amount = intent.exactAmount;
+    run.state.transition('quoting_checkout');
+    await this.mockStep(run, 'open_linear_billing');
+    await this.mockStep(run, 'configure_seats_and_tier');
+    await this.mockStep(run, 'read_checkout_total');
+    run.context.events.publish(run.context.runId, 'agent:checkout_total_read', {
+      amount,
+      currency: 'USD',
+      source: 'mock',
+    });
+    run.state.transition('checkout_quoted');
+
+    await delay(90);
+    run.context.events.publish(run.context.runId, 'agent:session_created', {
+      sessionId: `mock_${run.context.runId}`,
+      orderId: `mock_order_${run.context.runId}`,
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      hostedUrl: 'https://mock.invalid/prava-hosted',
+    });
+    run.state.transition('session_created');
+    run.context.events.publish(run.context.runId, 'agent:awaiting_card_entry', {
+      sessionId: `mock_${run.context.runId}`,
+      hostedUrl: 'https://mock.invalid/prava-hosted',
+      callbackUrl: 'https://mock.invalid/callback',
+    });
+    run.state.transition('awaiting_card_entry');
+    await delay(90);
+    run.state.transition('token_issued');
+    run.context.events.publish(run.context.runId, 'agent:token_issued', {
+      sessionId: `mock_${run.context.runId}`,
+      transactionReferenceId: 'mock_transaction',
+      credentialAvailable: true,
+    });
+    run.state.transition('automating_checkout');
+    await this.mockStep(run, 'fill_one_time_credentials');
+    await this.mockStep(run, 'verify_checkout_total_unchanged');
+    await this.mockStep(run, 'confirm_purchase');
+    run.state.transition('complete');
+    run.context.events.publish(run.context.runId, 'agent:complete', {
+      outcome: 'Mock Linear purchase completed; no browser or Prava network call was made.',
+    });
+    return { mode: 'mock', amount, currency: 'USD' };
+  }
+
+  private async runBrowserFlow(
+    run: AgentRun,
+    intent: PurchaseIntent,
+    mode: 'dry-run' | 'real',
+  ): Promise<ProvisioningResult> {
+    await mkdir(this.browserDataDir, { recursive: true });
+    await mkdir(this.artifactsDir, { recursive: true });
+
+    let browser: BrowserContext;
+    try {
+      browser = await chromium.launchPersistentContext(this.browserDataDir, {
+        channel: 'chrome',
+        headless: this.headless,
+        viewport: { width: 1440, height: 1000 },
+        artifactsDir: this.artifactsDir,
+      });
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      const message = /profile is already in use|Opening in existing browser session/i.test(raw)
+        ? 'The Capsule Chrome profile is already open. Close only the Chrome window opened by Capsule, then retry.'
+        : raw;
+      run.context.events.publish(run.context.runId, 'agent:error', {
+        phase: 'linear_browser_launch',
+        message,
+        retryable: true,
+      });
+      throw new Error(message);
+    }
+
+    const page = browser.pages()[0] ?? await browser.newPage();
+    try {
+      run.state.transition('quoting_checkout');
+      await this.domStep(run, 'open_linear_billing', async () => {
+        await page.goto(this.billingUrl, { waitUntil: 'domcontentloaded' });
+        await waitForLinearUi(page);
+        await page.waitForTimeout(3_000);
+        await this.ensureLinearAuthentication(run, page);
+        await waitForLinearUi(page);
+      });
+      await this.domStep(run, 'configure_seats_and_tier', () =>
+        this.configureCheckout(run, page, intent),
+      );
+
+      const quoted = await this.domStep(run, 'read_checkout_total', () =>
+        this.readStableTotal(page),
+      );
+      run.context.events.publish(run.context.runId, 'agent:checkout_total_read', {
+        amount: quoted.amount,
+        currency: quoted.currency,
+        source: 'linear_dom',
+      });
+      run.state.transition('checkout_quoted');
+
+      const prava = this.createPravaClient(run, quoted.currency);
+      const session = await prava.createSession(
+        'Linear',
+        'https://linear.app',
+        quoted.amount,
+        `${intent.seatCount} ${intent.tierName} seat${intent.seatCount === 1 ? '' : 's'}`,
+      );
+      run.sessionId = session.session_id;
+      run.state.transition('session_created');
+
+      if (mode === 'dry-run') {
+        run.state.transition('dry_run_complete');
+        run.context.events.publish(run.context.runId, 'agent:dry_run_complete', {
+          sessionId: session.session_id,
+          amount: quoted.amount,
+          currency: quoted.currency,
+          hostedUrl: session.iframe_url,
+        });
+        run.context.events.publish(run.context.runId, 'agent:complete', {
+          outcome: 'Dry run stopped after reading Linear total and creating the Prava session; no token was requested and no purchase was confirmed.',
+        });
+        return {
+          mode,
+          amount: quoted.amount,
+          currency: quoted.currency,
+          sessionId: session.session_id,
+          hostedUrl: session.iframe_url,
+        };
+      }
+
+      run.state.transition('awaiting_card_entry');
+      run.context.events.publish(run.context.runId, 'agent:awaiting_card_entry', {
+        sessionId: session.session_id,
+        hostedUrl: session.iframe_url,
+        callbackUrl: callbackForRun(requiredEnv('PRAVA_CALLBACK_URL'), run.context.runId),
+      });
+      await this.waitForPravaCardEntry(run, browser, session.iframe_url);
+      if (run.state.current === 'awaiting_card_entry') run.state.transition('callback_received');
+
+      const result = await prava.pollPaymentResult(session.session_id);
+      const credential = extractCredential(result);
+      run.credential = credential;
+      if (run.state.current === 'callback_received') run.state.transition('token_issued');
+      run.state.transition('automating_checkout');
+
+      await this.assertTotalUnchanged(run, page, quoted);
+      await this.domStep(run, 'fill_one_time_credentials', () =>
+        this.fillPaymentFields(page, credential),
+      );
+      await this.assertTotalUnchanged(run, page, quoted);
+
+      let checkoutApproved = false;
+      try {
+        await this.domStep(run, 'confirm_purchase', () => this.confirmPurchase(page));
+        checkoutApproved = true;
+      } finally {
+        await prava.reportStatus(
+          session.session_id,
+          credential.transactionReferenceId,
+          checkoutApproved ? 'APPROVED' : 'DECLINED',
+        );
+      }
+
+      const screenshotPath = path.join(this.artifactsDir, `${run.context.runId}-linear.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      run.context.events.publish(run.context.runId, 'agent:screenshot_saved', { path: screenshotPath });
+      run.state.transition('complete');
+      run.context.events.publish(run.context.runId, 'agent:complete', {
+        outcome: 'Linear purchase confirmed with one-time Prava credentials.',
+      });
+      run.credential = undefined;
+      return { mode, amount: quoted.amount, currency: quoted.currency, sessionId: session.session_id, screenshotPath };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Linear automation failed';
+      const failureScreenshot = path.join(this.artifactsDir, `${run.context.runId}-failure.png`);
+      const failureDetails = path.join(this.artifactsDir, `${run.context.runId}-failure.txt`);
+      await page.screenshot({ path: failureScreenshot, fullPage: true }).catch(() => undefined);
+      await writeFile(failureDetails, `${message}\nURL: ${page.url()}\n`, 'utf8').catch(() => undefined);
+      run.context.events.publish(run.context.runId, 'agent:screenshot_saved', { path: failureScreenshot });
+      run.credential = undefined;
+      if (run.state.current !== 'failed') {
+        try { run.state.transition('failed'); } catch { /* state may already be terminal */ }
+      }
+      run.context.events.publish(run.context.runId, 'agent:error', {
+        phase: 'linear_provisioning',
+        message,
+        retryable: true,
+      });
+      throw error;
+    } finally {
+      await browser.close();
+    }
+  }
+
+  private createPravaClient(run: AgentRun, currency: string): PravaHostedClient {
+    return new PravaHostedClient({
+      secretKey: requiredEnv('PRAVA_SECRET_KEY'),
+      userId: requiredEnv('PRAVA_TEST_USER_ID'),
+      userEmail: requiredEnv('PRAVA_TEST_USER_EMAIL'),
+      callbackUrl: callbackForRun(requiredEnv('PRAVA_CALLBACK_URL'), run.context.runId),
+      context: run.context,
+      currency,
+      baseUrl: process.env.PRAVA_API_URL ?? 'https://sandbox.api.prava.space',
+    });
+  }
+
+  private async ensureLinearAuthentication(run: AgentRun, page: Page): Promise<void> {
+    if (await isAuthenticatedLinearPage(page)) return;
+    if (!this.devMode || this.headless) {
+      throw new Error('Linear requires manual login/MFA. Run headed in development once to populate .browser-data.');
+    }
+
+    const action = await isMfaPage(page) ? 'linear_mfa' : 'linear_login';
+    run.context.events.publish(run.context.runId, 'agent:manual_action_required', {
+      action,
+      message: action === 'linear_mfa'
+        ? 'Complete Linear MFA in the opened Chrome window. The persistent profile will be reused.'
+        : 'Finish every Linear login screen manually in this window. Use email magic link or passkey, not Google OAuth.',
+      url: page.url(),
+    });
+
+    const deadline = Date.now() + this.manualTimeoutMs;
+    while (Date.now() < deadline) {
+      if (await isAuthenticatedLinearPage(page)) {
+        await page.goto(this.billingUrl, { waitUntil: 'domcontentloaded' });
+        await waitForLinearUi(page);
+        await page.waitForTimeout(3_000);
+        if (await isAuthenticatedLinearPage(page)) return;
+      }
+      await page.waitForTimeout(1_000);
+    }
+    throw new Error('Timed out waiting for manual Linear authentication. Keep email and magic-link steps in the Capsule Chrome window.');
+  }
+
+  private async configureCheckout(run: AgentRun, page: Page, intent: PurchaseIntent): Promise<void> {
+    await this.pauseForMfaIfNeeded(run, page);
+    if (intent.tierName === 'Free') {
+      throw new Error('Linear Free has no payable checkout; a Prava session must not be created for it.');
+    }
+    const billingText = await page.locator('body').innerText();
+    const billingUserCount = parseUserCountFromVisibleText(billingText);
+
+    if (intent.tierName === 'Basic') {
+      await this.withUiRetry(page, 'open Basic checkout', async () => {
+        await clickFirstVisible(page, [
+          page.getByRole('button', { name: /upgrade now|upgrade to basic/i }),
+          page.getByRole('link', { name: /upgrade now|upgrade to basic/i }),
+        ]);
+      });
+    } else {
+      await this.withUiRetry(page, 'open plan chooser', async () => {
+        await clickFirstVisible(page, [
+          page.getByRole('button', { name: /view all plans|all plans|change plan/i }),
+          page.getByRole('link', { name: /view all plans|all plans|change plan/i }),
+        ]);
+      });
+      await page.getByText(/Business/i).first().waitFor({ state: 'visible', timeout: 30_000 });
+      await this.withUiRetry(page, 'select Business tier', async () => {
+        await clickFirstVisible(page, [
+          page.getByRole('button', { name: /Business/i }),
+          page.getByRole('radio', { name: /Business/i }),
+          page.getByText(/^Business(?:\s|$)/i, { exact: false }),
+        ]);
+      });
+    }
+
+    await page.waitForTimeout(4_000);
+    const monthly = page.getByRole('button', { name: /monthly/i });
+    if (await monthly.first().isVisible().catch(() => false)) {
+      await monthly.first().click();
+      await page.waitForTimeout(2_000);
+    }
+
+    await this.withUiRetry(page, 'validate seat count', async () => {
+      const seats = await firstVisible([
+        page.getByLabel(/seats|users|members/i),
+        page.getByRole('spinbutton'),
+        page.locator('input[name*="seat" i], input[name*="quantity" i]'),
+      ]);
+      if (seats) {
+        await seats.fill(String(intent.seatCount));
+        await seats.blur();
+        return;
+      }
+
+      const visibleText = await page.locator('body').innerText();
+      const currentUsers = parseUserCountFromVisibleText(visibleText) ?? billingUserCount;
+      if (currentUsers === undefined) {
+        throw new Error('Linear exposes no seat input and its current workspace user count could not be read.');
+      }
+      if (currentUsers !== intent.seatCount) {
+        throw new Error(
+          `Linear checkout uses the workspace user count (${currentUsers}), but the intent requests ${intent.seatCount}. Adjust workspace members before checkout.`,
+        );
+      }
+    });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (await hasDisplayedTotal(page)) return;
+      await this.withUiRetry(page, 'continue to checkout', async () => {
+        await clickFirstVisible(page, [
+          page.getByRole('button', { name: /continue|review|next|select plan|upgrade now|proceed|checkout/i }),
+          page.getByRole('link', { name: /continue|review|next|upgrade now|proceed|checkout/i }),
+        ]);
+      });
+      await page.waitForTimeout(3_000);
+    }
+    throw new Error('Linear checkout total did not appear before the payment step.');
+  }
+  private async readStableTotal(page: Page): Promise<DisplayedMoney> {
+    const first = await readDisplayedTotal(page);
+    await page.waitForTimeout(TOTAL_STABILITY_DELAY_MS);
+    const second = await readDisplayedTotal(page);
+    if (first.amount !== second.amount || first.currency !== second.currency) {
+      throw new Error(`Linear checkout total was still changing (${formatMoney(first)} -> ${formatMoney(second)}).`);
+    }
+    return second;
+  }
+
+  private async assertTotalUnchanged(run: AgentRun, page: Page, expected: DisplayedMoney): Promise<void> {
+    const current = await this.domStep(run, 'verify_checkout_total_unchanged', () =>
+      this.readStableTotal(page),
+    );
+    if (current.amount === expected.amount && current.currency === expected.currency) return;
+    run.context.events.publish(run.context.runId, 'agent:checkout_total_changed', {
+      previous: formatMoney(expected),
+      current: formatMoney(current),
+    });
+    throw new Error(
+      `Linear checkout total changed from ${formatMoney(expected)} to ${formatMoney(current)}. The stale Prava amount will not be attempted; start a fresh run.`,
+    );
+  }
+
+  private async waitForPravaCardEntry(
+    run: AgentRun,
+    browser: BrowserContext,
+    hostedUrl: string,
+  ): Promise<void> {
+    const page = await browser.newPage();
+    await page.goto(hostedUrl, { waitUntil: 'domcontentloaded' });
+    run.context.events.publish(run.context.runId, 'agent:manual_action_required', {
+      action: 'prava_card_entry',
+      message: 'Complete hosted card entry and the card-network OTP/passkey in the opened Chrome window.',
+      url: hostedUrl,
+    });
+
+    const callback = new URL(requiredEnv('PRAVA_CALLBACK_URL'));
+    const deadline = Date.now() + this.manualTimeoutMs;
+    while (Date.now() < deadline) {
+      const returned = browser.pages().some((candidate) => {
+        try {
+          const current = new URL(candidate.url());
+          return current.origin === callback.origin && current.pathname === callback.pathname;
+        } catch { return false; }
+      });
+      if (returned || run.state.current === 'callback_received') {
+        if (returned && run.state.current === 'awaiting_card_entry') {
+          run.context.events.publish(run.context.runId, 'agent:callback_received', {
+            sessionId: run.sessionId ?? '',
+          });
+        }
+        return;
+      }
+      await page.waitForTimeout(1_000);
+    }
+    throw new Error('Timed out waiting for the Prava hosted callback.');
+  }
+
+  private async fillPaymentFields(page: Page, credential: OneTimeCredential): Promise<void> {
+    const cardNumber = await findVisibleInFrames(page, [
+      'input[autocomplete="cc-number"]',
+      'input[name="cardnumber"]',
+      'input[name*="card" i][name*="number" i]',
+      'input[placeholder*="card number" i]',
+    ]);
+    const expiry = await findVisibleInFrames(page, [
+      'input[autocomplete="cc-exp"]',
+      'input[name="exp-date"]',
+      'input[name*="expir" i]',
+      'input[placeholder*="MM" i]',
+    ]);
+    const securityCode = await findVisibleInFrames(page, [
+      'input[autocomplete="cc-csc"]',
+      'input[name="cvc"]',
+      'input[name*="cvv" i]',
+      'input[placeholder*="CVC" i]',
+      'input[placeholder*="CVV" i]',
+    ]);
+    if (!cardNumber || !expiry || !securityCode) {
+      throw new Error('Linear payment fields were not found, including embedded payment frames.');
+    }
+
+    await cardNumber.fill(credential.token);
+    await expiry.fill(`${credential.expiryMonth.padStart(2, '0')}/${credential.expiryYear.slice(-2)}`);
+    await securityCode.fill(credential.dynamicCvv);
+  }
+
+  private async confirmPurchase(page: Page): Promise<void> {
+    const button = await firstVisible([
+      page.getByRole('button', { name: /confirm (purchase|upgrade)|pay now|subscribe|complete purchase/i }),
+    ]);
+    if (!button) throw new Error('Final Linear purchase confirmation button was not found.');
+    await button.click();
+    await page.waitForTimeout(2_000);
+
+    const body = await page.locator('body').innerText().catch(() => '');
+    if (/payment (failed|declined)|card was declined|unable to process/i.test(body)) {
+      throw new Error('Linear reported that the payment failed or was declined.');
+    }
+    if (!/success|subscription (updated|active)|payment complete|thank you|plan has been/i.test(body)) {
+      throw new Error('Linear did not display an explicit purchase-success confirmation; outcome was not reported as approved.');
+    }
+  }
+
+  private async pauseForMfaIfNeeded(run: AgentRun, page: Page): Promise<void> {
+    if (!await isMfaPage(page)) return;
+    if (!this.devMode || this.headless) throw new Error('Unexpected Linear MFA prompt.');
+    run.context.events.publish(run.context.runId, 'agent:manual_action_required', {
+      action: 'linear_mfa',
+      message: 'Complete the unexpected Linear MFA prompt in the opened Chrome window; automation is paused.',
+      url: page.url(),
+    });
+    const deadline = Date.now() + this.manualTimeoutMs;
+    while (Date.now() < deadline && await isMfaPage(page)) await page.waitForTimeout(1_000);
+    if (await isMfaPage(page)) throw new Error('Timed out waiting for manual Linear MFA.');
+  }
+
+  private async withUiRetry(page: Page, label: string, action: () => Promise<void>): Promise<void> {
+    try {
+      await action();
+    } catch (firstError) {
+      await dismissUnexpectedModal(page);
+      await page.waitForTimeout(2_000);
+      try { await action(); } catch {
+        const message = firstError instanceof Error ? firstError.message : String(firstError);
+        throw new Error(`${label} failed after one modal-dismiss retry: ${message}`);
+      }
+    }
+  }
+
+  private async domStep<T>(run: AgentRun, step: string, action: () => Promise<T>): Promise<T> {
+    run.context.events.publish(run.context.runId, 'agent:dom_step', { step, status: 'started' });
+    try {
+      const result = await action();
+      run.context.events.publish(run.context.runId, 'agent:dom_step', { step, status: 'completed' });
+      return result;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      run.context.events.publish(run.context.runId, 'agent:dom_step', {
+        step,
+        status: 'failed',
+        detail,
+      });
+      throw error;
+    }
+  }
+
+  private async mockStep(run: AgentRun, step: string): Promise<void> {
+    await this.domStep(run, step, () => delay(70));
+  }
+}
+
+async function waitForLinearUi(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => (document.body?.innerText.trim().length ?? 0) > 0,
+    undefined,
+    { timeout: 30_000 },
+  ).catch(() => {
+    throw new Error('Linear did not finish loading its interactive UI within 30 seconds.');
+  });
+}
+async function isLoginOrMfa(page: Page): Promise<boolean> {
+  if (/login|signin|oauth|accounts\.google/i.test(page.url())) return true;
+  if (await isMfaPage(page)) return true;
+  return Boolean(await firstVisible([
+    page.locator('input[type="email"], input[autocomplete="email"], input[name*="email" i]'),
+    page.getByRole('link', { name: /log in|sign in/i }),
+    page.getByRole('button', { name: /log in|sign in|continue with (google|email|saml)|passkey|send.*link/i }),
+    page.getByText(/log in to linear|sign in to linear|enter your email|magic link|check your inbox|couldn.t sign you in|browser or app may not be secure/i),
+  ]));
+}
+
+async function isAuthenticatedLinearPage(page: Page): Promise<boolean> {
+  let url: URL;
+  try { url = new URL(page.url()); } catch { return false; }
+  if (url.hostname !== 'linear.app' || await isLoginOrMfa(page)) return false;
+  return Boolean(await firstVisible([
+    page.getByRole('heading', { name: /billing|settings/i }),
+    page.getByRole('link', { name: /inbox|my issues|settings/i }),
+    page.getByRole('button', { name: /search|workspace|settings/i }),
+    page.getByText(/billing history|payment method|current plan|my issues/i),
+  ]));
+}
+
+async function isMfaPage(page: Page): Promise<boolean> {
+  return page.getByText(/two-factor|verification code|check your email|check your inbox|security key|authenticator|magic link|verify your email/i)
+    .first().isVisible().catch(() => false);
+}
+
+async function dismissUnexpectedModal(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog').last();
+  if (!await dialog.isVisible().catch(() => false)) return;
+  const dismiss = await firstVisible([
+    dialog.getByRole('button', { name: /close|cancel|dismiss|not now/i }),
+  ]);
+  if (dismiss) await dismiss.click();
+  else await page.keyboard.press('Escape');
+}
+
+async function clickFirstVisible(page: Page, candidates: Locator[]): Promise<void> {
+  const target = await firstVisible(candidates);
+  if (!target) throw new Error(`No matching visible control found at ${page.url()}`);
+  await target.click();
+}
+
+async function firstVisible(candidates: Locator[]): Promise<Locator | undefined> {
+  for (const candidate of candidates) {
+    const first = candidate.first();
+    if (await first.isVisible().catch(() => false)) return first;
+  }
+  return undefined;
+}
+
+async function hasDisplayedTotal(page: Page): Promise<boolean> {
+  try { await readDisplayedTotal(page); return true; } catch { return false; }
+}
+
+async function readDisplayedTotal(page: Page): Promise<DisplayedMoney> {
+  for (const frame of page.frames()) {
+    const text = await frame.locator('body').innerText().catch(() => '');
+    const money = parseDisplayedMoneyFromVisibleText(text);
+    if (money) return money;
+  }
+  throw new Error('A displayed checkout total with an identifiable currency was not found in the Linear DOM.');
+}
+
+export function parseUserCountFromVisibleText(text: string): number | undefined {
+  const labeled = text.match(/\bUsers?\s*[:\n]?\s*(\d+)\b/i);
+  const suffixed = text.match(/\b(\d+)\s+users?\b/i);
+  const raw = labeled?.[1] ?? suffixed?.[1];
+  if (!raw) return undefined;
+  const count = Number(raw);
+  return Number.isSafeInteger(count) && count > 0 ? count : undefined;
+}
+export function parseDisplayedMoneyFromVisibleText(text: string): DisplayedMoney | undefined {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const labels = [/total due today/i, /amount due(?: today)?/i, /^total\b/i];
+  const symbolCurrencies: Record<string, string> = { '$': 'USD', '₹': 'INR', '€': 'EUR', '£': 'GBP' };
+  for (const label of labels) {
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!label.test(lines[index] ?? '')) continue;
+      const sample = `${lines[index] ?? ''} ${lines[index + 1] ?? ''}`;
+      const match = sample.match(/(?:(USD|INR|EUR|GBP|CAD|AUD)\s*|([$₹€£])\s*)([0-9][0-9,]*(?:\.\d{1,2})?)/i);
+      if (!match?.[3]) continue;
+      const currency = match[1]?.toUpperCase() ?? symbolCurrencies[match[2] ?? ''];
+      if (!currency) continue;
+      return { amount: Number(match[3].replaceAll(',', '')).toFixed(2), currency };
+    }
+  }
+  return undefined;
+}
+
+export function parseTotalFromVisibleText(text: string): string | undefined {
+  return parseDisplayedMoneyFromVisibleText(text)?.amount;
+}
+
+function formatMoney(money: DisplayedMoney): string {
+  return `${money.currency} ${money.amount}`;
+}
+
+async function findVisibleInFrames(page: Page, selectors: string[]): Promise<Locator | undefined> {
+  for (const frame of page.frames()) {
+    const found = await findVisibleInFrame(frame, selectors);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+async function findVisibleInFrame(frame: Frame, selectors: string[]): Promise<Locator | undefined> {
+  for (const selector of selectors) {
+    const candidate = frame.locator(selector).first();
+    if (await candidate.isVisible().catch(() => false)) return candidate;
+  }
+  return undefined;
+}
+
+function extractCredential(result: PaymentResultResponse): OneTimeCredential {
+  const item = result.transactions.flatMap((transaction) => transaction.line_items)[0];
+  if (!item?.token || !item.dynamic_cvv || !item.expiry_month || !item.expiry_year) {
+    throw new Error('Prava returned awaiting_result without complete one-time credentials.');
+  }
+  return {
+    token: item.token,
+    dynamicCvv: item.dynamic_cvv,
+    expiryMonth: item.expiry_month,
+    expiryYear: item.expiry_year,
+    transactionReferenceId: item.txn_ref_id,
+  };
+}
+
+function callbackForRun(value: string, runId: string): string {
+  const callback = new URL(value);
+  callback.searchParams.set('runId', runId);
+  return callback.toString();
+}
+
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required for real/dry-run automation.`);
+  return value;
+}
+
+function envPositiveInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer.`);
+  return parsed;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

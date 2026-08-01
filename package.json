@@ -13,7 +13,10 @@
     "prava:health": "npm run prava:health -w server",
     "prava:test": "npm run prava:test -w server",
     "agent:unit": "npm run agent:unit -w server",
-    "agent:test": "npm run agent:test -w server"
+    "agent:test": "npm run agent:test -w server",
+    "linear:dry-run": "npm run linear:dry-run -w server",
+    "linear:real": "npm run linear:real -w server",
+    "linear:login": "npm run linear:login -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

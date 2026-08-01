@@ -1,4 +1,4 @@
-﻿import { EventEmitter } from 'node:events';
+import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 
 export interface AgentEventPayloads {
@@ -52,6 +52,25 @@ export interface AgentEventPayloads {
     step: string;
     status: 'started' | 'completed' | 'failed';
     detail?: string;
+  };
+  'agent:automation_mode': { mode: 'mock' | 'dry-run' | 'real' };
+  'agent:manual_action_required': {
+    action: 'linear_login' | 'linear_mfa' | 'prava_card_entry';
+    message: string;
+    url?: string;
+  };
+  'agent:checkout_total_read': {
+    amount: string;
+    currency: string;
+    source: 'linear_dom' | 'mock';
+  };
+  'agent:checkout_total_changed': { previous: string; current: string };
+  'agent:screenshot_saved': { path: string };
+  'agent:dry_run_complete': {
+    sessionId: string;
+    amount: string;
+    currency: string;
+    hostedUrl: string;
   };
   'agent:renewal_required': { periodEndedAt: string; prompt: string };
   'agent:complete': { outcome: string };

@@ -1,19 +1,19 @@
-﻿# Capsule
+# Capsule
 
 Capsule is a streaming-first purchasing-agent scaffold with a Next.js 14 web app and an Express TypeScript orchestration server.
 
 ## Phase 0 architecture
 
 ```text
-intent parse
-  -> POST /v1/sessions from Express (Bearer PRAVA_SECRET_KEY)
-  -> redirect the user to Prava's hosted iframe_url verbatim
-  -> card entry + passkey / issuer OTP on Prava and card-network pages
-  -> Prava redirects to Capsule's HTTPS callback_url
-  -> Express polls GET /v1/sessions/:id/payment-result
-  -> one-time network token + dynamic CVV stay in server memory
-  -> checkout automation uses the credential once
-  -> POST /v1/sessions/:id/report-status with APPROVED or DECLINED
+intent parse (provisional estimate only)
+  -> persistent Playwright profile opens Linear billing (manual login once)
+  -> configure seats/tier and read the stable displayed checkout total
+  -> POST /v1/sessions with that exact decimal total (Bearer PRAVA_SECRET_KEY)
+  -> user completes hosted card entry + card-network OTP/passkey
+  -> callback, then poll until one-time token + dynamic CVV are available
+  -> re-read Linear total; abort if it changed
+  -> fill the one-time credentials and explicitly confirm checkout
+  -> screenshot proof and POST report-status with APPROVED or DECLINED
   -> renewal prompt at the end of the purchased period
 ```
 
@@ -38,7 +38,7 @@ Prava requires both `callback_url` and `purchase_context[0].merchant_details.url
 - `server/src/agent/` — intent parser, run registry, and lifecycle state machine.
 - `server/src/prava/` — thin REST client for create session, payment-result polling, and report-status.
 - `server/src/events/` — centralized typed `AgentEventEmitter`.
-- `server/src/automation/` — event-emitting boundary for later browser checkout steps.
+- `server/src/agent/linear-provisioner.ts` — persistent Playwright quote/payment state machine; all steps emit typed events.
 
 ## Streaming events
 
@@ -73,7 +73,7 @@ The API returns exactly:
 }
 ```
 
-Despite its required field name, `exactAmount` is a provisional preview estimate. It is calculated deterministically in integer cents from the currently published yearly-billed Linear rates: Free `$0`, Basic `$10/user/month`, and Business `$16/user/month`. For sprint previews, Capsule uses a synthetic 30-day proration (`monthly price × seats × durationDays ÷ 30`). Linear does not sell arbitrary day-length subscriptions, and its actual billing/proration rules depend on billing cadence and seat changes. Phase 3 must read the final amount, including tax and fees, from Linear's checkout before creating the locked Prava session. Never pass this Phase 2 estimate to Prava.
+Despite its required field name, `exactAmount` is a provisional preview estimate. It is calculated deterministically in integer cents from the currently published yearly-billed Linear rates: Free `$0`, Basic `$10/user/month`, and Business `$16/user/month`. For sprint previews, Capsule uses a synthetic 30-day proration (`monthly price × seats × durationDays ÷ 30`). Linear does not sell arbitrary day-length subscriptions, and its actual billing/proration rules depend on billing cadence and seat changes. The LinearProvisioner reads the final displayed amount, including tax and fees, before creating the locked Prava session. The Phase 2 estimate is never passed to Prava.
 
 Precision and spend safeguards:
 
@@ -161,7 +161,7 @@ Next.js runs on port 3000 and Express on port 3001. A real hosted sandbox flow c
 
 - `POST /api/agent/intent` — create a run and parse an intent.
 - `GET /api/agent/stream` — SSE event stream.
-- `POST /api/prava/create-session` — create one hosted Prava session for an intent run.
+- `POST /api/agent/provision` — start `mock`, `dry-run`, or `real` provisioning. Direct Prava session creation is disabled so the quote step cannot be bypassed.
 - `POST /api/prava/callback` — acknowledge the browser's return from Prava.
 - `GET /api/prava/payment-result/by-run/:runId` — poll with the server-held session ID; returns only sanitized status.
 - `POST /api/prava/report-status` — report the real checkout outcome and discard the in-memory one-time credential.
@@ -179,3 +179,38 @@ Next.js runs on port 3000 and Express on port 3001. A real hosted sandbox flow c
 
 Never paste card data into Capsule, environment files, logs, or source code. Enter it only on Prava's hosted card-entry page.
 
+
+## Phase 3 Linear automation
+
+Authentication is deliberately manual once. Capsule launches installed Chrome with Playwright's launchPersistentContext() and stores its isolated profile at ./.browser-data. On the first dry run, log into the disposable Linear workspace in that Chrome window; later runs reuse its cookies/local storage. Capsule never reads LINEAR_TEST_PASSWORD, and that variable has been removed from .env.example. Do not point Playwright at your normal Chrome profile. Google may reject OAuth inside an automated browser; on Linear's login page use **Continue with email** (magic link) or **Log in with passkey** instead.
+
+The order is enforced by the state machine: intent_parsed -> quoting_checkout -> checkout_quoted -> session_created. The old direct /api/prava/create-session endpoint returns HTTP 410. A stable DOM total is read twice before Prava creation and again after token issuance and immediately before confirmation. If it changes, Capsule emits gent:checkout_total_changed, leaves the stale credential unused, and requires a fresh run.
+
+Modes:
+
+- ENABLE_MOCK_AGENT=true forces mock mode. It starts no browser and makes no Prava request, but emits the same event progression with short delays.
+- dry-run uses the real persistent Linear UI, reads the real total, and creates the real sandbox Prava session, then stops before hosted card entry/token issuance/payment.
+-
+eal continues through manual hosted approval, token polling, Linear confirmation, screenshot proof under rtifacts/linear, and Prava status reporting. Use only in the disposable workspace.
+
+Bootstrap the persistent session once in ordinary Chrome. This avoids Google/email providers rejecting Playwright automation during authentication:
+
+```powershell
+npm run linear:login
+```
+
+Log in manually, confirm Linear is open, then close that Chrome window so the profile is flushed. Never run `linear:login` and a Playwright mode at the same time because Chrome permits only one process per user-data directory.
+
+Run the safe standalone dry run from the repository root:
+
+`powershell
+npm run linear:dry-run
+`
+
+A Chrome window opens. Complete Linear login/MFA manually if requested. The terminal prints typed events but never prints card credentials. Only after the dry run selectors and exact total are verified should you use:
+
+`powershell
+npm run linear:real
+`
+
+Current Linear documentation places billing at **Settings > Administration > Billing**. LINEAR_BILLING_URL defaults to https://linear.app/settings/billing; override it with the exact disposable-workspace billing URL if Linear redirects elsewhere. Because Linear can change its private app DOM, the automation uses accessible labels plus one retry/modal dismissal, then fails closed before payment if required controls or explicit success confirmation cannot be found.

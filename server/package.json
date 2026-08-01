@@ -11,13 +11,17 @@
     "prava:health": "curl https://sandbox.api.prava.space/health",
     "prava:test": "tsx prava/test.ts",
     "agent:unit": "tsx --test agent/*.unit.test.ts",
-    "agent:test": "tsx agent/test.ts"
+    "agent:test": "tsx agent/test.ts",
+    "linear:dry-run": "tsx agent/linear-test.ts",
+    "linear:real": "tsx agent/linear-test.ts --real",
+    "linear:login": "tsx agent/linear-login.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "openai": "^7.3.0",
+    "playwright": "^1.62.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

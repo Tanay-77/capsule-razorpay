@@ -1,4 +1,4 @@
-﻿export type PurchaseIntent = {
+export type PurchaseIntent = {
   platform: 'Linear';
   seatCount: number;
   durationDays: number;
@@ -10,11 +10,16 @@
 export type AgentState =
   | 'idle'
   | 'intent_parsed'
+  | 'quoting_checkout'
+  | 'checkout_quoted'
   | 'session_created'
   | 'awaiting_card_entry'
   | 'callback_received'
   | 'token_issued'
   | 'automating_checkout'
+  | 'dry_run_complete'
   | 'complete'
   | 'renewal_required'
   | 'failed';
+
+export type AutomationMode = 'mock' | 'dry-run' | 'real';

@@ -1,4 +1,4 @@
-﻿import type { AgentExecutionContext } from '../agent/context.js';
+import type { AgentExecutionContext } from '../agent/context.js';
 import type {
   CreateSessionRequest,
   PaymentResultResponse,
@@ -47,11 +47,7 @@ export class PravaApiClient {
       expiresAt: session.expires_at,
       hostedUrl: session.iframe_url,
     });
-    context.events.publish(context.runId, 'agent:awaiting_card_entry', {
-      sessionId: session.session_id,
-      hostedUrl: session.iframe_url,
-      callbackUrl: request.callback_url,
-    });
+
     return session;
   }
 
