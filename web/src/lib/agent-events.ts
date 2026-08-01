@@ -5,6 +5,7 @@
   'agent:session_created',
   'agent:awaiting_card_entry',
   'agent:callback_received',
+  'agent:payment_result_polled',
   'agent:token_issued',
   'agent:status_reported',
   'agent:dom_step',

@@ -9,7 +9,9 @@
     "dev": "concurrently -n web,server -c cyan,magenta \"npm run dev -w web\" \"npm run dev -w server\"",
     "build": "npm run build -w server && npm run build -w web",
     "lint": "npm run lint -w web",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "prava:health": "npm run prava:health -w server",
+    "prava:test": "npm run prava:test -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

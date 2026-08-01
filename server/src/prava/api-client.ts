@@ -62,7 +62,7 @@ export class PravaApiClient {
     return this.request<PaymentResultResponse>(
       context,
       'get_payment_result',
-      `/v1/sessions/${encodeURIComponent(sessionId)}/payment-result?_t=${Date.now()}`,
+      `/v1/sessions/${encodeURIComponent(sessionId)}/payment-result`,
       { method: 'GET', cache: 'no-store' },
     );
   }
@@ -105,6 +105,12 @@ export class PravaApiClient {
     try {
       if (!this.secretKey || !this.secretKey.startsWith('sk_')) {
         throw new Error('PRAVA_SECRET_KEY is not configured.');
+      }
+      if (
+        this.baseUrl.includes('sandbox.api.prava.space') &&
+        !this.secretKey.startsWith('sk_test_')
+      ) {
+        throw new Error('Prava sandbox requires an sk_test_ secret key.');
       }
 
       const headers = new Headers(init.headers);

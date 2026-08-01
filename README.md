@@ -57,6 +57,42 @@ Prava requires both `callback_url` and `purchase_context[0].merchant_details.url
 
 Progress goes through this emitter rather than `console.log`.
 
+## Phase 1 sandbox lifecycle check
+
+The standalone runner uses the real hosted REST lifecycle without touching Linear:
+
+1. `createSession(merchantName, merchantUrl, amountDecimalString, description)` sends a secret-key-authenticated `POST /v1/sessions`. The amount is a decimal string, never cents.
+2. It prints the complete create-session response and the returned `iframe_url`.
+3. You open that exact URL and manually complete hosted card entry plus the card network's OTP/passkey step.
+4. Prava redirects the browser to the public HTTPS `PRAVA_CALLBACK_URL`. The dedicated `/prava/manual-callback` page tells you to return to the terminal.
+5. `pollPaymentResult(sessionId)` prints every response while backing off from 2 seconds to at most 8 seconds. It returns only at `awaiting_result`, after checking every line item has `token`, `dynamic_cvv`, `expiry_month`, and `expiry_year`.
+6. `reportStatus(sessionId, txnRefId, outcome)` is available for the later real merchant checkout. Call it with `APPROVED` or `DECLINED` only after an actual checkout attempt; the standalone token test deliberately does not fabricate an outcome.
+
+All lifecycle functions publish typed events through the centralized emitter. Poll progress uses `agent:payment_result_polled`; credentials themselves are never placed in SSE events.
+
+Run the connectivity check first:
+
+```powershell
+npm run prava:health
+```
+
+Then run the manual lifecycle check from the repository root:
+
+```powershell
+npm run prava:test
+```
+
+The terminal prints a real one-time credential, so treat that terminal output as sensitive and do not save or share it. The runner times out after 15 minutes; create a fresh session if it expires.
+
+Use only the currently published sandbox values, entered manually on Prava's hosted page:
+
+- Card: `4622 9431 2313 7789`
+- CVV: `757`
+- Expiry: `12/27`
+- Test OTP when prompted: `456789`
+
+Do not put the test card or OTP in source code or environment files.
+
 ## Environment
 
 Copy the root example into `server/.env`:
@@ -65,7 +101,7 @@ Copy the root example into `server/.env`:
 Copy-Item .env.example server/.env
 ```
 
-Fill in the five values. `PRAVA_SECRET_KEY` is server-only. `PRAVA_PUBLISHABLE_KEY` is retained for account configuration/future embedded work but is not used by hosted mode.
+Fill in the API/application values plus the Phase 1 callback and test-user values. `PRAVA_SECRET_KEY` is server-only. `PRAVA_PUBLISHABLE_KEY` is retained for account configuration/future embedded work but is not used by hosted mode.
 
 If Express is not available at `http://localhost:3001` from the browser, create `web/.env.local` with its public HTTPS URL:
 

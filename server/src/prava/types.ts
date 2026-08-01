@@ -45,10 +45,10 @@ export interface SessionResponse {
 
 export type PaymentStatus =
   | 'pending'
+  | 'processing'
   | 'awaiting_result'
   | 'completed'
-  | 'failed'
-  | string;
+  | 'failed';
 
 export interface PaymentProduct {
   product_ref_id: string;

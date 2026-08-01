@@ -26,6 +26,12 @@ export interface AgentEventPayloads {
     callbackUrl: string;
   };
   'agent:callback_received': { sessionId: string };
+  'agent:payment_result_polled': {
+    sessionId: string;
+    attempt: number;
+    status: 'pending' | 'processing' | 'awaiting_result' | 'completed' | 'failed';
+    nextPollInMs?: number;
+  };
   'agent:token_issued': {
     sessionId: string;
     transactionReferenceId: string;
