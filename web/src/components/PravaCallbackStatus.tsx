@@ -1,9 +1,10 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AgentEventStream } from './AgentEventStream';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const CAPSULE_RETURN_URL = process.env.NEXT_PUBLIC_CAPSULE_RETURN_URL ?? 'http://localhost:3000';
 
 type CallbackPhase = 'acknowledging' | 'polling' | 'ready' | 'failed';
 
@@ -25,6 +26,13 @@ export function PravaCallbackStatus({ runId }: { runId: string }) {
   }, []);
 
   useEffect(() => {
+    if (window.location.origin !== new URL(CAPSULE_RETURN_URL).origin) {
+      window.location.replace(
+        `${CAPSULE_RETURN_URL}/prava/callback?runId=${encodeURIComponent(runId)}`,
+      );
+      return;
+    }
+
     let active = true;
 
     const poll = async () => {
@@ -82,6 +90,15 @@ export function PravaCallbackStatus({ runId }: { runId: string }) {
     };
   }, [runId, stopPolling]);
 
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    const timer = setTimeout(() => {
+      window.location.replace(
+        `${CAPSULE_RETURN_URL}/?runId=${encodeURIComponent(runId)}&paymentReturn=1`,
+      );
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [phase, runId]);
   const copy: Record<CallbackPhase, { title: string; detail: string }> = {
     acknowledging: {
       title: 'Returning to Capsule…',

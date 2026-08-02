@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { AgentEventStream } from '@/components/AgentEventStream';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
@@ -25,6 +25,11 @@ export default function HomePage() {
   const [renewalDecisionSeconds, setRenewalDecisionSeconds] = useState(12);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    const returnedRunId = new URLSearchParams(window.location.search).get('runId');
+    if (returnedRunId) setRunId(returnedRunId);
+  }, []);
 
   async function submitIntent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -170,7 +175,8 @@ export default function HomePage() {
                   <span className="mt-2 block text-[9px] font-bold uppercase tracking-[0.08em] opacity-55">{item.note}</span>
                 </button>
               ))}
-            </div>          </form>
+            </div>
+          </form>
         </section>
 
         {error ? (
