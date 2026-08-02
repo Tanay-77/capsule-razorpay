@@ -1,4 +1,5 @@
 # Capsule
+![alt text](image.png)
 
 Capsule is an AI purchasing agent that provisions software without giving the agent permanent access to a company card.
 
