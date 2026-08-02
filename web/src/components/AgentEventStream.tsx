@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AGENT_EVENT_TYPES,
   type AgentEvent,
@@ -9,9 +9,27 @@ import {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+type EventTone = 'default' | 'accent' | 'inverse' | 'muted' | 'error';
+
+interface EventPresentation {
+  label: string;
+  message: string;
+  detail?: string;
+  tone: EventTone;
+}
+
+interface SessionStatus {
+  merchant: string;
+  amount: string;
+  currency: string;
+  amountSource: 'ESTIMATE' | 'CHECKOUT';
+  phase: string;
+}
+
 export function AgentEventStream({ runId }: { runId?: string }) {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!runId) {
@@ -20,22 +38,23 @@ export function AgentEventStream({ runId }: { runId?: string }) {
       return;
     }
 
+    setEvents([]);
     const stream = new EventSource(
       `${API_URL}/api/agent/stream?runId=${encodeURIComponent(runId)}`,
     );
-
-    const handlers = new Map<
-      AgentEventType,
-      (event: MessageEvent<string>) => void
-    >();
+    const handlers = new Map<AgentEventType, (event: MessageEvent<string>) => void>();
 
     for (const type of AGENT_EVENT_TYPES) {
       const handler = (message: MessageEvent<string>) => {
-        const event = JSON.parse(message.data) as AgentEvent;
-        setEvents((current) => {
-          if (current.some((item) => item.id === event.id)) return current;
-          return [...current, event].slice(-50);
-        });
+        try {
+          const event = JSON.parse(message.data) as AgentEvent;
+          setEvents((current) => {
+            if (current.some((item) => item.id === event.id)) return current;
+            return [...current, event].slice(-120);
+          });
+        } catch {
+          // Ignore malformed frames; the EventSource connection remains usable.
+        }
       };
       handlers.set(type, handler);
       stream.addEventListener(type, handler as EventListener);
@@ -52,52 +71,291 @@ export function AgentEventStream({ runId }: { runId?: string }) {
     };
   }, [runId]);
 
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [events]);
+
+  const status = useMemo(() => deriveSessionStatus(events), [events]);
+  const approvalPending = useMemo(() => isApprovalPending(events), [events]);
+
   return (
-    <section className="rounded-[2rem] border border-ink/10 bg-ink p-6 text-paper shadow-card">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-paper/50">
-            Live execution
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold">Agent event stream</h2>
-        </div>
-        <span className="flex items-center gap-2 text-xs text-paper/65">
-          <span
-            className={`h-2.5 w-2.5 rounded-full ${
-              connected ? 'bg-emerald-400' : 'bg-paper/25'
-            }`}
-          />
-          {connected ? 'Streaming' : runId ? 'Connecting' : 'Waiting'}
+    <section className="flex min-h-[34rem] flex-col border-4 border-ink bg-ink text-paper lg:min-h-[42rem]">
+      <div className="flex items-center justify-between border-b-2 border-paper/40 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] sm:px-5">
+        <span>Capsule / live execution</span>
+        <span className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 ${connected ? 'bg-signal' : 'border border-paper/60'}`} />
+          {connected ? 'streaming' : runId ? 'connecting' : 'standby'}
         </span>
       </div>
 
-      <ol className="space-y-3">
+      <div className="terminal-scroll min-h-0 flex-1 overflow-y-auto" role="log" aria-live="polite" aria-label="Live agent events">
         {events.length === 0 ? (
-          <li className="rounded-2xl border border-dashed border-paper/15 p-5 text-sm text-paper/45">
-            Submit an intent to begin a run. Events will replay here even if the
-            stream connects after parsing starts.
-          </li>
+          <div className="grid min-h-[26rem] place-items-center px-8 text-center text-sm uppercase tracking-[0.12em] text-paper/45">
+            <div>
+              <p className="text-4xl text-paper/20">_</p>
+              <p className="mt-3">{runId ? 'Opening event channel' : 'Awaiting command'}</p>
+            </div>
+          </div>
         ) : (
-          events.map((event) => (
-            <li
-              key={event.id}
-              className="rounded-2xl border border-paper/10 bg-paper/[0.04] p-4"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold text-paper">
-                  {event.type}
-                </span>
-                <time className="text-xs text-paper/40">
-                  {new Date(event.timestamp).toLocaleTimeString()}
-                </time>
-              </div>
-              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-paper/60">
-                {JSON.stringify(event.payload, null, 2)}
-              </pre>
-            </li>
-          ))
+          <ol>
+            {events.map((event, index) => (
+              <EventLine event={event} index={index + 1} key={event.id} />
+            ))}
+          </ol>
         )}
-      </ol>
+        <div ref={endRef} />
+      </div>
+
+      {approvalPending ? (
+        <div className="border-t-4 border-ink bg-signal px-5 py-5 text-ink" role="status">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em]">Passkey / human checkpoint</p>
+          <p className="mt-2 text-xl font-black uppercase leading-tight sm:text-2xl">Approve in the secure Prava window</p>
+          <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/65">Capsule is paused. No checkout continues without you.</p>
+        </div>
+      ) : null}
+
+      <div className="grid border-t-4 border-signal bg-paper text-ink sm:grid-cols-[1fr_1fr_auto]">
+        <StatusCell label="Merchant scope" value={status.merchant} />
+        <StatusCell
+          label={`${status.amountSource.toLowerCase()} amount`}
+          value={formatAmount(status.amount, status.currency)}
+        />
+        <StatusCell label="State" value={status.phase} last />
+      </div>
     </section>
   );
+}
+
+function EventLine({ event, index }: { event: AgentEvent; index: number }) {
+  const view = presentEvent(event);
+  const toneClasses: Record<EventTone, string> = {
+    default: 'border-paper/20 bg-transparent text-paper',
+    muted: 'border-paper/10 bg-paper/[0.03] text-paper/65',
+    accent: 'border-signal bg-signal text-ink',
+    inverse: 'border-paper bg-paper text-ink',
+    error: 'border-signal bg-ink text-signal',
+  };
+
+  return (
+    <li className={`grid grid-cols-[3.25rem_1fr] border-b-2 ${toneClasses[view.tone]}`}>
+      <div className="border-r-2 border-current/20 px-3 py-4 text-right text-[10px] font-bold opacity-55">
+        {String(index).padStart(2, '0')}
+      </div>
+      <div className="min-w-0 px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <span className="text-[11px] font-black uppercase tracking-[0.16em]">{view.label}</span>
+          <time className="text-[10px] font-bold opacity-50">
+            {new Date(event.timestamp).toLocaleTimeString([], { hour12: false })}
+          </time>
+        </div>
+        <p className={`mt-2 text-sm leading-6 ${view.tone === 'accent' ? 'text-lg font-black sm:text-xl' : ''}`}>
+          {view.message}
+        </p>
+        {view.detail ? (
+          <p className="mt-2 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.08em] opacity-55">
+            {view.detail}
+          </p>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function StatusCell({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
+  return (
+    <div className={`px-4 py-3 ${last ? '' : 'border-b-2 border-ink sm:border-b-0 sm:border-r-2'}`}>
+      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-ink/55">{label}</p>
+      <p className="mt-1 truncate text-xs font-black uppercase">{value}</p>
+    </div>
+  );
+}
+
+function deriveSessionStatus(events: AgentEvent[]): SessionStatus {
+  const status: SessionStatus = {
+    merchant: 'UNSCOPED',
+    amount: '--',
+    currency: '',
+    amountSource: 'ESTIMATE',
+    phase: 'IDLE',
+  };
+
+  for (const event of events) {
+    const payload = event.payload;
+    if (event.type === 'agent:intent_parsed') {
+      status.merchant = readString(payload.platform, 'LINEAR').toUpperCase();
+      status.amount = readString(payload.exactAmount, '--');
+      status.currency = 'USD';
+      status.amountSource = 'ESTIMATE';
+    }
+    if (event.type === 'agent:checkout_total_read') {
+      status.amount = readString(payload.amount, status.amount);
+      status.currency = readString(payload.currency, status.currency);
+      status.amountSource = readString(payload.source) === 'mock' ? 'ESTIMATE' : 'CHECKOUT';
+    }
+    const nextPhase = phaseFor(event.type);
+    if (nextPhase) status.phase = nextPhase;
+  }
+
+  return status;
+}
+
+function presentEvent(event: AgentEvent): EventPresentation {
+  const payload = event.payload;
+  switch (event.type) {
+    case 'agent:intent_parsed':
+      return {
+        label: 'Intent parsed',
+        message: `${readNumber(payload.seatCount)} ${readString(payload.tierName)} seat${readNumber(payload.seatCount) === 1 ? '' : 's'} for ${readNumber(payload.durationDays)} days.`,
+        detail: `Provisional estimate · ${formatAmount(readString(payload.exactAmount), 'USD')}`,
+        tone: 'inverse',
+      };
+    case 'agent:session_created':
+      return {
+        label: 'Prava session',
+        message: 'Exact-amount payment session created.',
+        detail: `Session ${shortId(readString(payload.sessionId))} · credentials not issued yet`,
+        tone: 'default',
+      };
+    case 'agent:passkey_required':
+      return {
+        label: 'Human approval required',
+        message: readString(payload.message, 'Approve this purchase with your passkey in the secure Prava window.'),
+        detail: 'Face ID / Touch ID / device passkey · no approval is automated',
+        tone: 'accent',
+      };
+    case 'agent:awaiting_card_entry':
+      return {
+        label: 'Secure card window',
+        message: 'Prava is waiting for saved-card selection or sandbox card entry.',
+        detail: 'Raw card details never enter Capsule',
+        tone: 'muted',
+      };
+    case 'agent:token_issued':
+      return {
+        label: 'Token issued',
+        message: 'Single-use network credential received and held in server memory.',
+        detail: 'Merchant + exact amount scoped · sensitive values hidden',
+        tone: 'inverse',
+      };
+    case 'agent:dom_step':
+      return {
+        label: `DOM / ${readString(payload.status, 'update')}`,
+        message: humanize(readString(payload.step, 'checkout step')),
+        detail: readString(payload.detail) || undefined,
+        tone: readString(payload.status) === 'failed' ? 'error' : 'muted',
+      };
+    case 'agent:checkout_total_read':
+      return {
+        label: 'Checkout total',
+        message: `${formatAmount(readString(payload.amount), readString(payload.currency))} read from the merchant page.`,
+        detail: readString(payload.source) === 'mock' ? 'Mock preview amount' : 'This value locks the Prava session',
+        tone: 'default',
+      };
+    case 'agent:complete':
+      return {
+        label: 'Complete',
+        message: readString(payload.outcome, 'Run completed.'),
+        detail: 'No reusable payment credential retained',
+        tone: 'accent',
+      };
+    case 'agent:error':
+      return {
+        label: 'Run error',
+        message: readString(payload.message, 'The run failed.'),
+        detail: `Phase · ${humanize(readString(payload.phase, 'unknown'))}`,
+        tone: 'error',
+      };
+    case 'agent:payment_result_polled':
+      return {
+        label: 'Prava poll',
+        message: `Payment state: ${humanize(readString(payload.status, 'pending'))}.`,
+        detail: `Attempt ${readNumber(payload.attempt)}`,
+        tone: 'muted',
+      };
+    case 'agent:automation_mode':
+      return {
+        label: 'Run mode',
+        message: `${readString(payload.mode, 'unknown').toUpperCase()} execution selected.`,
+        tone: 'muted',
+      };
+    case 'agent:dry_run_complete':
+      return {
+        label: 'Dry-run stop',
+        message: 'Quote and real Prava session verified. Purchase was not submitted.',
+        detail: formatAmount(readString(payload.amount), readString(payload.currency)),
+        tone: 'accent',
+      };
+    case 'agent:screenshot_saved':
+      return {
+        label: 'Proof captured',
+        message: 'Checkout result screenshot saved by the backend.',
+        tone: 'default',
+      };
+    default:
+      return {
+        label: humanize(event.type.replace('agent:', '')),
+        message: genericMessage(payload),
+        tone: 'muted',
+      };
+  }
+}
+
+function isApprovalPending(events: AgentEvent[]): boolean {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index]?.type;
+    if (type === 'agent:passkey_required') return true;
+    if (type === 'agent:token_issued' || type === 'agent:complete' || type === 'agent:error') return false;
+  }
+  return false;
+}
+
+function phaseFor(type: AgentEventType): string | undefined {
+  const phases: Partial<Record<AgentEventType, string>> = {
+    'agent:intent_parsed': 'INTENT READY',
+    'agent:checkout_total_read': 'TOTAL READ',
+    'agent:session_created': 'SESSION LIVE',
+    'agent:awaiting_card_entry': 'CARD ENTRY',
+    'agent:passkey_required': 'APPROVAL',
+    'agent:token_issued': 'TOKEN READY',
+    'agent:dom_step': 'AUTOMATING',
+    'agent:dry_run_complete': 'DRY RUN DONE',
+    'agent:complete': 'COMPLETE',
+    'agent:error': 'FAILED',
+  };
+  return phases[type];
+}
+
+function formatAmount(amount: string, currency: string): string {
+  if (!amount || amount === '--') return '--';
+  if (currency === 'USD') return `$${amount} USD`;
+  return `${currency ? `${currency} ` : ''}${amount}`;
+}
+
+function genericMessage(payload: Record<string, unknown>): string {
+  const status = readString(payload.status);
+  const action = readString(payload.action);
+  const message = readString(payload.message);
+  if (message) return message;
+  if (status) return `Status: ${humanize(status)}.`;
+  if (action) return `${humanize(action)} required.`;
+  return 'Agent state updated.';
+}
+
+function humanize(value: string): string {
+  if (!value) return 'Update';
+  const result = value.replace(/[_-]+/g, ' ').trim();
+  return result.charAt(0).toUpperCase() + result.slice(1);
+}
+
+function shortId(value: string): string {
+  if (!value) return 'pending';
+  return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-5)}` : value;
+}
+
+function readString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
 }

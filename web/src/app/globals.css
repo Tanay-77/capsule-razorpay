@@ -12,16 +12,56 @@
   box-sizing: border-box;
 }
 
+html {
+  background: #f4f1e8;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(255, 92, 53, 0.16), transparent 30rem),
-    radial-gradient(circle at 88% 84%, rgba(75, 101, 68, 0.18), transparent 32rem),
-    #f4f1e8;
+  background: #f4f1e8;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #ff5c35;
+  color: #11120f;
+}
+
+.terminal-scroll {
+  scrollbar-color: #ff5c35 #11120f;
+  scrollbar-width: thin;
+}
+
+.terminal-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.terminal-scroll::-webkit-scrollbar-track {
+  background: #11120f;
+  border-left: 1px solid rgba(244, 241, 232, 0.25);
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: #ff5c35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

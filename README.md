@@ -47,6 +47,7 @@ Prava requires both `callback_url` and `purchase_context[0].merchant_details.url
 - `agent:intent_parsed`
 - `agent:session_created`
 - `agent:awaiting_card_entry`
+- `agent:passkey_required`
 - `agent:callback_received`
 - `agent:token_issued`
 - `agent:dom_step`
@@ -57,6 +58,23 @@ Prava requires both `callback_url` and `purchase_context[0].merchant_details.url
 
 Progress goes through this emitter rather than `console.log`.
 
+## Phase 4 terminal interface
+
+The Next.js home screen is a Swiss-brutalist command terminal backed by the existing Express lifecycle rather than a separate demo data source. It posts the intent, starts provisioning, then subscribes to `GET /api/agent/stream?runId=...`. Express replays early parse events if the SSE connection opens after parsing has finished.
+
+The terminal gives intent, session, DOM, token, completion, and error events distinct treatments. `agent:passkey_required` also opens a persistent high-contrast human-checkpoint panel until `agent:token_issued` arrives. The panel never displays or receives card credentials. The status strip shows the Linear merchant scope and provisional estimate, then replaces the estimate with the actual DOM checkout currency and amount when available. It deliberately has no countdown or sprint-expiry timer.
+
+For frontend development, set mock mode in `server/.env` and run both apps:
+
+```env
+ENABLE_MOCK_AGENT=true
+```
+
+```powershell
+npm run dev
+```
+
+Open `http://localhost:3000`. Mock mode still exercises the typed event emitter and SSE transport, but does not launch Playwright or call Prava. Set `ENABLE_MOCK_AGENT=false` and restart the server before a recorded dry or real run.
 ## Phase 2 intent parser
 
 The `IntentParser` in `server/src/agent/intent-parser.ts` performs one OpenAI Responses API structured-output call under normal operation. It retries at most once, and only when the parsed data fails schema or business validation. The default is `gpt-5.6-terra` with low reasoning and a 350-token output ceiling; override it with `OPENAI_INTENT_MODEL` only after evaluating the same prompts.

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { agentEvents } from '../events/AgentEventEmitter.js';
 import type { OneTimeCredential } from '../prava/types.js';
 import type { AgentExecutionContext } from './context.js';
-import type { PurchaseIntent } from './types.js';
+import type { AutomationMode, PurchaseIntent } from './types.js';
 import { AgentStateMachine } from './state-machine.js';
 
 export interface AgentRun {
@@ -14,6 +14,12 @@ export interface AgentRun {
   tokenEventEmitted?: boolean;
   intent?: PurchaseIntent;
   automationStarted?: boolean;
+  automationMode?: AutomationMode;
+  renewalDemoMs?: number;
+  renewalDecisionMs?: number;
+  renewalTimer?: ReturnType<typeof setTimeout>;
+  renewalDecisionTimer?: ReturnType<typeof setTimeout>;
+  renewalResolved?: 'approved' | 'not_approved';
 }
 
 const runs = new Map<string, AgentRun>();

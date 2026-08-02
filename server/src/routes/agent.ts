@@ -1,13 +1,16 @@
 import { Router } from 'express';
 import { agentEvents, type AgentEvent } from '../events/AgentEventEmitter.js';
-import { createAgentRun, getAgentRun } from '../agent/runs.js';
+import { createAgentRun, getAgentRun, type AgentRun } from '../agent/runs.js';
 import { parseIntent } from '../agent/intent-parser.js';
 import { IntentParserValidationError } from '../agent/linear-pricing.js';
 import { LinearProvisioner } from '../agent/linear-provisioner.js';
+import { clearRenewalTimers, scheduleRenewalDemo } from '../agent/renewal-demo.js';
 import type { AutomationMode } from '../agent/types.js';
 
 export const agentRouter = Router();
 const linearProvisioner = new LinearProvisioner();
+const DEFAULT_RENEWAL_DEMO_SECONDS = 90;
+const DEFAULT_RENEWAL_DECISION_SECONDS = 12;
 
 agentRouter.get('/stream', (req, res) => {
   const runId = typeof req.query.runId === 'string' ? req.query.runId : undefined;
@@ -64,24 +67,126 @@ agentRouter.post('/intent', async (req, res) => {
 
 agentRouter.post('/provision', (req, res) => {
   const runId = typeof req.body?.runId === 'string' ? req.body.runId : '';
-  const mode = parseAutomationMode(req.body?.mode);
+  const requestedMode = parseAutomationMode(req.body?.mode);
+  const renewalDemoSeconds = parseBoundedInteger(
+    req.body?.renewalDemoSeconds,
+    DEFAULT_RENEWAL_DEMO_SECONDS,
+    5,
+    600,
+  );
+  const renewalDecisionSeconds = parseBoundedInteger(
+    req.body?.renewalDecisionSeconds,
+    DEFAULT_RENEWAL_DECISION_SECONDS,
+    3,
+    120,
+  );
+
   if (!runId) return res.status(400).json({ error: 'runId is required' });
-  if (!mode) return res.status(400).json({ error: 'mode must be mock, dry-run, or real' });
+  if (!requestedMode) return res.status(400).json({ error: 'mode must be mock, dry-run, or real' });
+  if (!renewalDemoSeconds) return res.status(400).json({ error: 'renewalDemoSeconds must be an integer from 5 to 600' });
+  if (!renewalDecisionSeconds) return res.status(400).json({ error: 'renewalDecisionSeconds must be an integer from 3 to 120' });
 
   const run = getAgentRun(runId);
   if (!run) return res.status(404).json({ error: 'Agent run not found' });
   if (!run.intent) return res.status(409).json({ error: 'Parse an intent before provisioning' });
   if (run.automationStarted) return res.status(409).json({ error: 'Provisioning already started for this run' });
-  run.automationStarted = true;
 
-  void linearProvisioner.provision(run, run.intent, mode).catch(() => {
+  const effectiveMode = process.env.ENABLE_MOCK_AGENT === 'true' ? 'mock' : requestedMode;
+  configureRun(run, effectiveMode, renewalDemoSeconds * 1_000, renewalDecisionSeconds * 1_000);
+  run.automationStarted = true;
+  startProvisioning(run, effectiveMode);
+
+  return res.status(202).json({
+    runId,
+    mode: effectiveMode,
+    renewalDemoSeconds,
+    renewalDecisionSeconds,
+    streamUrl: `/api/agent/stream?runId=${encodeURIComponent(runId)}`,
+  });
+});
+
+agentRouter.post('/renewal/approve', (req, res) => {
+  const runId = typeof req.body?.runId === 'string' ? req.body.runId : '';
+  if (!runId) return res.status(400).json({ error: 'runId is required' });
+
+  const originalRun = getAgentRun(runId);
+  if (!originalRun?.intent) return res.status(404).json({ error: 'Renewal run not found' });
+  if (originalRun.state.current !== 'renewal_required' || originalRun.renewalResolved) {
+    return res.status(409).json({ error: 'This renewal is not awaiting approval' });
+  }
+
+  clearRenewalTimers(originalRun);
+  originalRun.renewalResolved = 'approved';
+  originalRun.state.transition('renewal_approved');
+
+  const renewalRun = createAgentRun();
+  renewalRun.intent = { ...originalRun.intent };
+  renewalRun.context.events.publish(renewalRun.context.runId, 'agent:intent_parsed', {
+    intent: 'purchase',
+    platform: renewalRun.intent.platform,
+    seatCount: renewalRun.intent.seatCount,
+    durationDays: renewalRun.intent.durationDays,
+    exactAmount: renewalRun.intent.exactAmount,
+    tierName: renewalRun.intent.tierName,
+  });
+  renewalRun.state.transition('intent_parsed');
+
+  const mode = originalRun.automationMode ?? 'real';
+  configureRun(
+    renewalRun,
+    mode,
+    originalRun.renewalDemoMs ?? DEFAULT_RENEWAL_DEMO_SECONDS * 1_000,
+    originalRun.renewalDecisionMs ?? DEFAULT_RENEWAL_DECISION_SECONDS * 1_000,
+  );
+  renewalRun.automationStarted = true;
+
+  originalRun.context.events.publish(originalRun.context.runId, 'agent:renewal_approved', {
+    approvedAt: new Date().toISOString(),
+    renewalRunId: renewalRun.context.runId,
+    freshSessionRequired: true,
+    freshPasskeyRequired: true,
+  });
+  startProvisioning(renewalRun, mode);
+
+  return res.status(202).json({
+    runId: renewalRun.context.runId,
+    mode,
+    streamUrl: `/api/agent/stream?runId=${encodeURIComponent(renewalRun.context.runId)}`,
+  });
+});
+
+function configureRun(run: AgentRun, mode: AutomationMode, demoMs: number, decisionMs: number): void {
+  run.automationMode = mode;
+  run.renewalDemoMs = demoMs;
+  run.renewalDecisionMs = decisionMs;
+}
+
+function startProvisioning(run: AgentRun, mode: AutomationMode): void {
+  if (!run.intent) return;
+  void linearProvisioner.provision(run, run.intent, mode).then((result) => {
+    if (result.mode === 'dry-run' || run.state.current !== 'complete') return;
+    scheduleRenewalDemo(run, {
+      delayMs: run.renewalDemoMs ?? DEFAULT_RENEWAL_DEMO_SECONDS * 1_000,
+      decisionWindowMs: run.renewalDecisionMs ?? DEFAULT_RENEWAL_DECISION_SECONDS * 1_000,
+    });
+  }).catch(() => {
     // The provisioner publishes its typed failure event; never duplicate it with console logging.
   });
-  const effectiveMode = process.env.ENABLE_MOCK_AGENT === 'true' ? 'mock' : mode;
-  return res.status(202).json({ runId, mode: effectiveMode, streamUrl: `/api/agent/stream?runId=${encodeURIComponent(runId)}` });
-});
+}
 
 function parseAutomationMode(value: unknown): AutomationMode | undefined {
   if (value === 'mock' || value === 'dry-run' || value === 'real') return value;
   return undefined;
+}
+
+function parseBoundedInteger(
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (value === undefined) return fallback;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) return undefined;
+  return parsed;
 }

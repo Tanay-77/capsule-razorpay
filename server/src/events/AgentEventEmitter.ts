@@ -31,6 +31,11 @@ export interface AgentEventPayloads {
     hostedUrl: string;
     callbackUrl: string;
   };
+  'agent:passkey_required': {
+    sessionId: string;
+    hostedUrl: string;
+    message: string;
+  };
   'agent:callback_received': { sessionId: string };
   'agent:payment_result_polled': {
     sessionId: string;
@@ -72,7 +77,28 @@ export interface AgentEventPayloads {
     currency: string;
     hostedUrl: string;
   };
-  'agent:renewal_required': { periodEndedAt: string; prompt: string };
+  'agent:renewal_required': {
+    periodEndedAt: string;
+    decisionDeadline: string;
+    seatCount: number;
+    durationDays: number;
+    prompt: string;
+    freshApprovalRequired: true;
+  };
+  'agent:renewal_approved': {
+    approvedAt: string;
+    renewalRunId: string;
+    freshSessionRequired: true;
+    freshPasskeyRequired: true;
+  };
+  'agent:renewal_not_approved': {
+    resolvedAt: string;
+    reason: 'no_user_approval';
+    sessionCreated: false;
+    tokenIssued: false;
+    merchantChargeAttempted: false;
+    reusableCredentialStored: false;
+  };
   'agent:complete': { outcome: string };
   'agent:error': { phase: string; message: string; retryable: boolean };
 }

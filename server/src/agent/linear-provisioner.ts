@@ -113,7 +113,12 @@ export class LinearProvisioner {
       callbackUrl: 'https://mock.invalid/callback',
     });
     run.state.transition('awaiting_card_entry');
-    await delay(90);
+    run.context.events.publish(run.context.runId, 'agent:passkey_required', {
+      sessionId: `mock_${run.context.runId}`,
+      hostedUrl: 'https://mock.invalid/prava-hosted',
+      message: 'Approve this exact-amount purchase with your passkey.',
+    });
+    await delay(900);
     run.state.transition('token_issued');
     run.context.events.publish(run.context.runId, 'agent:token_issued', {
       sessionId: `mock_${run.context.runId}`,
@@ -219,6 +224,11 @@ export class LinearProvisioner {
         sessionId: session.session_id,
         hostedUrl: session.iframe_url,
         callbackUrl: callbackForRun(requiredEnv('PRAVA_CALLBACK_URL'), run.context.runId),
+      });
+      run.context.events.publish(run.context.runId, 'agent:passkey_required', {
+        sessionId: session.session_id,
+        hostedUrl: session.iframe_url,
+        message: 'Approve this exact-amount purchase in the secure Prava window.',
       });
       await this.waitForPravaCardEntry(run, browser, session.iframe_url);
       if (run.state.current === 'awaiting_card_entry') run.state.transition('callback_received');
@@ -631,12 +641,12 @@ export function parseUserCountFromVisibleText(text: string): number | undefined 
 export function parseDisplayedMoneyFromVisibleText(text: string): DisplayedMoney | undefined {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const labels = [/total due today/i, /amount due(?: today)?/i, /^total\b/i];
-  const symbolCurrencies: Record<string, string> = { '$': 'USD', '₹': 'INR', '€': 'EUR', '£': 'GBP' };
+  const symbolCurrencies: Record<string, string> = { '$': 'USD', '\u20B9': 'INR', '\u20AC': 'EUR', '\u00A3': 'GBP' };
   for (const label of labels) {
     for (let index = 0; index < lines.length; index += 1) {
       if (!label.test(lines[index] ?? '')) continue;
       const sample = `${lines[index] ?? ''} ${lines[index + 1] ?? ''}`;
-      const match = sample.match(/(?:(USD|INR|EUR|GBP|CAD|AUD)\s*|([$₹€£])\s*)([0-9][0-9,]*(?:\.\d{1,2})?)/i);
+      const match = sample.match(/(?:(USD|INR|EUR|GBP|CAD|AUD)\s*|([$\u20B9\u20AC\u00A3])\s*)([0-9][0-9,]*(?:\.\d{1,2})?)/i);
       if (!match?.[3]) continue;
       const currency = match[1]?.toUpperCase() ?? symbolCurrencies[match[2] ?? ''];
       if (!currency) continue;

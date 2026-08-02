@@ -13,7 +13,9 @@ const transitions: Record<AgentState, readonly AgentState[]> = {
   token_issued: ['automating_checkout', 'failed'],
   automating_checkout: ['complete', 'failed'],
   complete: ['renewal_required'],
-  renewal_required: ['intent_parsed'],
+  renewal_required: ['renewal_approved', 'renewal_not_approved'],
+  renewal_approved: [],
+  renewal_not_approved: [],
   failed: ['intent_parsed'],
 };
 

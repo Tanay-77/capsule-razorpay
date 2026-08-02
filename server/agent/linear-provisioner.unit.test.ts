@@ -13,7 +13,7 @@ test('normalizes comma-separated displayed USD amounts', () => {
 });
 test('detects INR from the real Linear checkout total', () => {
   assert.deepEqual(
-    parseDisplayedMoneyFromVisibleText('Subtotal\n₹1,007.85\nTax\n₹181.42\nTotal\n₹1,189.27'),
+    parseDisplayedMoneyFromVisibleText('Subtotal\n\u20B91,007.85\nTax\n\u20B9181.42\nTotal\n\u20B91,189.27'),
     { amount: '1189.27', currency: 'INR' },
   );
 });
@@ -43,6 +43,7 @@ test('mock mode emits the real event path without browser or Prava calls', async
     const types = run.context.events.recent(run.context.runId).map((event) => event.type);
     assert.ok(types.includes('agent:checkout_total_read'));
     assert.ok(types.includes('agent:session_created'));
+    assert.ok(types.includes('agent:passkey_required'));
     assert.ok(types.includes('agent:token_issued'));
     assert.ok(types.includes('agent:complete'));
   } finally {

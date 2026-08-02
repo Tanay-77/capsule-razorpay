@@ -20,6 +20,8 @@ export type AgentState =
   | 'dry_run_complete'
   | 'complete'
   | 'renewal_required'
+  | 'renewal_approved'
+  | 'renewal_not_approved'
   | 'failed';
 
 export type AutomationMode = 'mock' | 'dry-run' | 'real';

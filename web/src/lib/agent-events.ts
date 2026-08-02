@@ -10,6 +10,7 @@ export const AGENT_EVENT_TYPES = [
   'agent:prava_request',
   'agent:session_created',
   'agent:awaiting_card_entry',
+  'agent:passkey_required',
   'agent:callback_received',
   'agent:payment_result_polled',
   'agent:token_issued',
