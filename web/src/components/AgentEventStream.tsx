@@ -214,8 +214,9 @@ function RenewalMomentPanel({
     return (
       <section className="border-t-[10px] border-signal bg-paper px-5 py-8 text-ink sm:px-8 sm:py-12" role="status">
         <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Monthly renewal / silence recorded</p>
-        <h2 className="mt-4 text-5xl font-black uppercase leading-[0.86] tracking-[-0.08em] sm:text-7xl lg:text-8xl">
-          No approval.<br />No charge.
+        <h2 className="mt-4 font-black uppercase leading-[0.9] tracking-[-0.06em]">
+          <span className="block text-4xl [word-spacing:-0.16em] sm:text-6xl lg:text-7xl">No approval</span>
+          <span className="mt-2 block text-4xl [word-spacing:-0.16em] sm:text-6xl lg:text-7xl">No charge</span>
         </h2>
         <div className="mt-8 grid border-4 border-ink sm:grid-cols-2 lg:grid-cols-4">
           <ProofFact label="Renewal session" value="NOT CREATED" />

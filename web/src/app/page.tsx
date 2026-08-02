@@ -93,25 +93,39 @@ export default function HomePage() {
           </div>
 
           <form onSubmit={submitIntent}>
-            <div className="flex items-start border-b-2 border-ink">
-              <label className="border-r-2 border-ink bg-signal px-4 py-5 text-2xl font-black" htmlFor="intent" aria-label="Purchase command">
-                &gt;
-              </label>
-              <textarea
-                autoFocus
-                className="min-h-28 w-full resize-none bg-transparent px-5 py-5 text-base font-bold leading-7 outline-none placeholder:text-ink/30 sm:text-lg"
-                id="intent"
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                value={input}
-                placeholder="Tell Capsule what to provision…"
-              />
+            <div className="border-b-2 border-ink p-4 sm:p-5">
+              <div className="border-2 border-ink bg-paper transition-shadow focus-within:shadow-[6px_6px_0_#11120f]">
+                <label className="sr-only" htmlFor="intent">Command Capsule agent</label>
+                <textarea
+                  autoFocus
+                  className="min-h-32 w-full resize-none bg-transparent px-5 py-5 text-base font-bold leading-7 outline-none placeholder:text-ink/30 sm:text-lg"
+                  id="intent"
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  value={input}
+                  placeholder="Ask Capsule to provision software for your team…"
+                />
+                <div className="flex items-center justify-between border-t-2 border-ink px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <span className="h-2.5 w-2.5 bg-signal" aria-hidden="true" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.16em]">Capsule agent</span>
+                    <span className="hidden text-[9px] font-bold uppercase tracking-[0.1em] text-ink/45 sm:inline">Ctrl + Enter to send</span>
+                  </div>
+                  <button
+                    aria-label="Send command to Capsule"
+                    className="flex h-12 w-12 items-center justify-center border-2 border-ink bg-signal text-2xl font-black transition-colors hover:bg-ink hover:text-paper disabled:cursor-not-allowed disabled:bg-ink/15 disabled:text-ink/40"
+                    disabled={submitting || !input.trim()}
+                    type="submit"
+                  >
+                    {submitting ? <span className="text-sm">…</span> : <span aria-hidden="true">↑</span>}
+                  </button>
+                </div>
+              </div>
             </div>
-
             <div className="grid border-b-2 border-ink sm:grid-cols-2">
               <label className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">
                 <span>
@@ -143,30 +157,20 @@ export default function HomePage() {
               </label>
             </div>
 
-            <div className="grid lg:grid-cols-[1fr_auto]">
-              <div className="grid sm:grid-cols-3">
-                {MODES.map((item, index) => (
-                  <button
-                    className={`min-h-20 border-b-2 border-ink px-4 py-3 text-left transition-colors last:border-b-0 sm:border-b-0 ${index < MODES.length - 1 ? 'sm:border-r-2' : ''} ${mode === item.value ? 'bg-ink text-paper' : 'bg-paper hover:bg-signal'}`}
-                    key={item.value}
-                    onClick={() => setMode(item.value)}
-                    type="button"
-                    aria-pressed={mode === item.value}
-                  >
-                    <span className="block text-xs font-black tracking-[0.16em]">[{mode === item.value ? 'X' : ' '}] {item.label}</span>
-                    <span className="mt-2 block text-[9px] font-bold uppercase tracking-[0.08em] opacity-55">{item.note}</span>
-                  </button>
-                ))}
-              </div>
-              <button
-                className="min-h-20 border-t-2 border-ink bg-signal px-8 text-sm font-black uppercase tracking-[0.14em] transition-colors hover:bg-ink hover:text-paper disabled:cursor-not-allowed disabled:bg-ink/15 disabled:text-ink/40 lg:min-w-64 lg:border-l-2 lg:border-t-0"
-                disabled={submitting || !input.trim()}
-                type="submit"
-              >
-                {submitting ? 'Parsing…' : 'Execute →'}
-              </button>
-            </div>
-          </form>
+            <div className="grid sm:grid-cols-3">
+              {MODES.map((item, index) => (
+                <button
+                  className={`min-h-20 border-b-2 border-ink px-4 py-3 text-left transition-colors last:border-b-0 sm:border-b-0 ${index < MODES.length - 1 ? 'sm:border-r-2' : ''} ${mode === item.value ? 'bg-ink text-paper' : 'bg-paper hover:bg-signal'}`}
+                  key={item.value}
+                  onClick={() => setMode(item.value)}
+                  type="button"
+                  aria-pressed={mode === item.value}
+                >
+                  <span className="block text-xs font-black tracking-[0.16em]">[{mode === item.value ? 'X' : ' '}] {item.label}</span>
+                  <span className="mt-2 block text-[9px] font-bold uppercase tracking-[0.08em] opacity-55">{item.note}</span>
+                </button>
+              ))}
+            </div>          </form>
         </section>
 
         {error ? (
