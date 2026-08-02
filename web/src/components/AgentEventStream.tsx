@@ -378,7 +378,7 @@ function presentEvent(event: AgentEvent): EventPresentation {
         message: 'Silence created no session, no token, and no merchant charge.',
         detail: 'No reusable payment credential was retained',
         tone: 'accent',
-      };    case 'agent:complete':
+      }; case 'agent:complete':
       return {
         label: 'Complete',
         message: readString(payload.outcome, 'Run completed.'),
