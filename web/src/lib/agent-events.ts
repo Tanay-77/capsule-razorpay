@@ -18,6 +18,8 @@ export const AGENT_EVENT_TYPES = [
   'agent:screenshot_saved',
   'agent:dry_run_complete',
   'agent:renewal_required',
+  'agent:renewal_approved',
+  'agent:renewal_not_approved',
   'agent:complete',
   'agent:error',
 ] as const;

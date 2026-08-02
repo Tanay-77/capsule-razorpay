@@ -1,8 +1,16 @@
 export type PurchaseIntent = {
   platform: 'Linear';
   seatCount: number;
-  durationDays: number;
-  /** Provisional 30-day prorated estimate. Never send this value to Prava. */
+  /** The user's requested sprint length. This is never rewritten to match billing. */
+  requestedDurationDays: number;
+  billingCadence: 'monthly';
+  /** A display/demo approximation for one monthly merchant billing cycle. */
+  billingPeriodDays: 30;
+  /** Capsule purchases only the first cycle; every later cycle needs fresh approval. */
+  billablePeriodCount: 1;
+  /** Human-readable disclosure when requested duration and billing granularity differ. */
+  pricingNotice: string;
+  /** Provisional first-cycle estimate. Never send this value to Prava. */
   exactAmount: string;
   tierName: 'Free' | 'Basic' | 'Business';
 };

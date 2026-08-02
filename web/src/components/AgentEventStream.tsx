@@ -26,9 +26,17 @@ interface SessionStatus {
   phase: string;
 }
 
-export function AgentEventStream({ runId }: { runId?: string }) {
+export function AgentEventStream({
+  runId,
+  onRenewalRunStarted,
+}: {
+  runId?: string;
+  onRenewalRunStarted?: (runId: string) => void;
+}) {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [connected, setConnected] = useState(false);
+  const [renewalApproving, setRenewalApproving] = useState(false);
+  const [renewalError, setRenewalError] = useState<string>();
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,6 +85,27 @@ export function AgentEventStream({ runId }: { runId?: string }) {
 
   const status = useMemo(() => deriveSessionStatus(events), [events]);
   const approvalPending = useMemo(() => isApprovalPending(events), [events]);
+  const renewalMoment = useMemo(() => latestRenewalMoment(events), [events]);
+
+  async function approveRenewal() {
+    if (!runId || renewalApproving) return;
+    setRenewalApproving(true);
+    setRenewalError(undefined);
+    try {
+      const response = await fetch(`${API_URL}/api/agent/renewal/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runId }),
+      });
+      const result = (await response.json()) as { runId?: string; error?: string };
+      if (!response.ok || !result.runId) throw new Error(result.error ?? 'Renewal approval failed');
+      onRenewalRunStarted?.(result.runId);
+    } catch (caught) {
+      setRenewalError(caught instanceof Error ? caught.message : 'Renewal approval failed');
+    } finally {
+      setRenewalApproving(false);
+    }
+  }
 
   return (
     <section className="flex min-h-[34rem] flex-col border-4 border-ink bg-ink text-paper lg:min-h-[42rem]">
@@ -112,6 +141,15 @@ export function AgentEventStream({ runId }: { runId?: string }) {
           <p className="mt-2 text-xl font-black uppercase leading-tight sm:text-2xl">Approve in the secure Prava window</p>
           <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/65">Capsule is paused. No checkout continues without you.</p>
         </div>
+      ) : null}
+
+      {renewalMoment ? (
+        <RenewalMomentPanel
+          approving={renewalApproving}
+          error={renewalError}
+          event={renewalMoment}
+          onApprove={() => void approveRenewal()}
+        />
       ) : null}
 
       <div className="grid border-t-4 border-signal bg-paper text-ink sm:grid-cols-[1fr_1fr_auto]">
@@ -161,6 +199,74 @@ function EventLine({ event, index }: { event: AgentEvent; index: number }) {
   );
 }
 
+function RenewalMomentPanel({
+  event,
+  approving,
+  error,
+  onApprove,
+}: {
+  event: AgentEvent;
+  approving: boolean;
+  error?: string;
+  onApprove: () => void;
+}) {
+  if (event.type === 'agent:renewal_not_approved') {
+    return (
+      <section className="border-t-[10px] border-signal bg-paper px-5 py-8 text-ink sm:px-8 sm:py-12" role="status">
+        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Renewal decision / silence recorded</p>
+        <h2 className="mt-4 text-5xl font-black uppercase leading-[0.86] tracking-[-0.08em] sm:text-7xl lg:text-8xl">
+          No approval.<br />No charge.
+        </h2>
+        <div className="mt-8 grid border-4 border-ink sm:grid-cols-2 lg:grid-cols-4">
+          <ProofFact label="Renewal session" value="NOT CREATED" />
+          <ProofFact label="Payment token" value="NOT ISSUED" />
+          <ProofFact label="Merchant checkout" value="NOT ATTEMPTED" />
+          <ProofFact label="Reusable credential" value="NOT STORED" last />
+        </div>
+        <p className="mt-6 max-w-4xl text-sm font-black uppercase leading-6 tracking-[0.08em]">
+          Silence granted no payment authority. Capsule retained no reusable card credential that could be used for renewal.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="border-t-[10px] border-signal bg-paper px-5 py-7 text-ink sm:px-8 sm:py-9" role="status">
+      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Sprint ending / explicit decision required</p>
+      <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div>
+          <h2 className="text-3xl font-black uppercase leading-tight tracking-[-0.05em] sm:text-5xl">
+            Renew {readNumber(event.payload.seatCount)} seat{readNumber(event.payload.seatCount) === 1 ? '' : 's'} for {readNumber(event.payload.durationDays)} more days?
+          </h2>
+          <p className="mt-4 text-xs font-bold uppercase leading-5 tracking-[0.09em] text-ink/60">
+            No session exists yet. Approval starts a fresh quote, a fresh Prava session, and a fresh passkey checkpoint.
+          </p>
+        </div>
+        <button
+          className="border-4 border-ink bg-signal px-6 py-5 text-sm font-black uppercase tracking-[0.12em] hover:bg-ink hover:text-paper disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={approving}
+          onClick={onApprove}
+          type="button"
+        >
+          {approving ? 'Starting fresh run…' : 'Approve + use passkey →'}
+        </button>
+      </div>
+      <p className="mt-5 border-l-4 border-ink pl-4 text-[10px] font-black uppercase tracking-[0.12em]">
+        Leave this unanswered to demonstrate: silence creates nothing.
+      </p>
+      {error ? <p className="mt-4 border-2 border-signal bg-ink px-4 py-3 text-xs font-bold text-signal">{error}</p> : null}
+    </section>
+  );
+}
+
+function ProofFact({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
+  return (
+    <div className={`min-h-28 px-4 py-4 ${last ? '' : 'border-b-2 border-ink sm:border-r-2 lg:border-b-0'}`}>
+      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-ink/50">{label}</p>
+      <p className="mt-4 text-lg font-black uppercase leading-tight text-signal">{value}</p>
+    </div>
+  );
+}
 function StatusCell({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
   return (
     <div className={`px-4 py-3 ${last ? '' : 'border-b-2 border-ink sm:border-b-0 sm:border-r-2'}`}>
@@ -251,7 +357,27 @@ function presentEvent(event: AgentEvent): EventPresentation {
         detail: readString(payload.source) === 'mock' ? 'Mock preview amount' : 'This value locks the Prava session',
         tone: 'default',
       };
-    case 'agent:complete':
+    case 'agent:renewal_required':
+      return {
+        label: 'Renewal decision',
+        message: readString(payload.prompt, 'Sprint ending — renew seats?'),
+        detail: 'No Prava session exists until explicit approval',
+        tone: 'accent',
+      };
+    case 'agent:renewal_approved':
+      return {
+        label: 'Renewal approved',
+        message: 'A fresh purchase run is starting from a new quote.',
+        detail: 'Fresh Prava session + fresh passkey required',
+        tone: 'inverse',
+      };
+    case 'agent:renewal_not_approved':
+      return {
+        label: 'Renewal not approved',
+        message: 'Silence created no session, no token, and no merchant charge.',
+        detail: 'No reusable payment credential was retained',
+        tone: 'accent',
+      };    case 'agent:complete':
       return {
         label: 'Complete',
         message: readString(payload.outcome, 'Run completed.'),
@@ -300,6 +426,16 @@ function presentEvent(event: AgentEvent): EventPresentation {
   }
 }
 
+function latestRenewalMoment(events: AgentEvent[]): AgentEvent | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event) continue;
+    if (event.type === 'agent:renewal_not_approved') return event;
+    if (event.type === 'agent:renewal_approved') return undefined;
+    if (event.type === 'agent:renewal_required') return event;
+  }
+  return undefined;
+}
 function isApprovalPending(events: AgentEvent[]): boolean {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const type = events[index]?.type;
@@ -320,6 +456,9 @@ function phaseFor(type: AgentEventType): string | undefined {
     'agent:dom_step': 'AUTOMATING',
     'agent:dry_run_complete': 'DRY RUN DONE',
     'agent:complete': 'COMPLETE',
+    'agent:renewal_required': 'RENEWAL DECISION',
+    'agent:renewal_approved': 'RENEWAL APPROVED',
+    'agent:renewal_not_approved': 'NO RENEWAL',
     'agent:error': 'FAILED',
   };
   return phases[type];

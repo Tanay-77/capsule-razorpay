@@ -1,4 +1,4 @@
-﻿import type { AgentExecutionContext } from '../agent/context.js';
+import type { AgentExecutionContext } from '../agent/context.js';
 
 export interface DomStep {
   name: string;
@@ -38,14 +38,3 @@ export async function runCheckoutSteps(
   }
 
 }
-
-export function requestRenewalApproval(
-  context: AgentExecutionContext,
-  periodEndedAt: string,
-): void {
-  context.events.publish(context.runId, 'agent:renewal_required', {
-    periodEndedAt,
-    prompt: 'The purchased period has ended. Approve a new Prava purchase?',
-  });
-}
-

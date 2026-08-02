@@ -54,6 +54,8 @@ Prava requires both `callback_url` and `purchase_context[0].merchant_details.url
 - `agent:status_reported`
 - `agent:complete`
 - `agent:renewal_required`
+- `agent:renewal_approved`
+- `agent:renewal_not_approved`
 - `agent:error`
 
 Progress goes through this emitter rather than `console.log`.
@@ -75,6 +77,15 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. Mock mode still exercises the typed event emitter and SSE transport, but does not launch Playwright or call Prava. Set `ENABLE_MOCK_AGENT=false` and restart the server before a recorded dry or real run.
+## Renewal-not-approved demo
+
+After a completed mock or real purchase, Capsule compresses `durationDays` into a UI-configured demo delay (90 seconds by default). At the simulated period end it emits `agent:renewal_required` and asks whether to renew the same seat count for the same number of days.
+
+The prompt itself creates nothing. Only the explicit **Approve + use passkey** action creates a separate run, re-quotes Linear, and can then create a fresh Prava session requiring a fresh passkey approval. If the decision window expires unanswered, Capsule emits `agent:renewal_not_approved` with server-side evidence that the renewal created no session, issued no token, attempted no merchant checkout, and retained no reusable credential.
+
+For a quick live demo, use mock mode and set the UI controls to 5 seconds for sprint end and 3 seconds for the silence window. Submit the purchase, wait for the renewal prompt, and do not click approve. The interface ends on the large **NO APPROVAL. NO CHARGE.** proof state.
+
+These are in-memory demo timers, not subscription expiry or auto-renewal timers. Restarting Express clears them. Capsule never schedules or submits a renewal payment automatically.
 ## Phase 2 intent parser
 
 The `IntentParser` in `server/src/agent/intent-parser.ts` performs one OpenAI Responses API structured-output call under normal operation. It retries at most once, and only when the parsed data fails schema or business validation. The default is `gpt-5.6-terra` with low reasoning and a 350-token output ceiling; override it with `OPENAI_INTENT_MODEL` only after evaluating the same prompts.

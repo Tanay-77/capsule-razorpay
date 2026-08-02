@@ -230,13 +230,14 @@ export class LinearProvisioner {
         hostedUrl: session.iframe_url,
         message: 'Approve this exact-amount purchase in the secure Prava window.',
       });
-      await this.waitForPravaCardEntry(run, browser, session.iframe_url);
-      if (run.state.current === 'awaiting_card_entry') run.state.transition('callback_received');
+      await this.openPravaCardEntry(run, browser, session.iframe_url);
 
       const result = await prava.pollPaymentResult(session.session_id);
       const credential = extractCredential(result);
       run.credential = credential;
-      if (run.state.current === 'callback_received') run.state.transition('token_issued');
+      if (run.state.current === 'awaiting_card_entry' || run.state.current === 'callback_received') {
+        run.state.transition('token_issued');
+      }
       run.state.transition('automating_checkout');
 
       await this.assertTotalUnchanged(run, page, quoted);
@@ -427,7 +428,7 @@ export class LinearProvisioner {
     );
   }
 
-  private async waitForPravaCardEntry(
+  private async openPravaCardEntry(
     run: AgentRun,
     browser: BrowserContext,
     hostedUrl: string,
@@ -440,28 +441,10 @@ export class LinearProvisioner {
       url: hostedUrl,
     });
 
-    const callback = new URL(requiredEnv('PRAVA_CALLBACK_URL'));
-    const deadline = Date.now() + this.manualTimeoutMs;
-    while (Date.now() < deadline) {
-      const returned = browser.pages().some((candidate) => {
-        try {
-          const current = new URL(candidate.url());
-          return current.origin === callback.origin && current.pathname === callback.pathname;
-        } catch { return false; }
-      });
-      if (returned || run.state.current === 'callback_received') {
-        if (returned && run.state.current === 'awaiting_card_entry') {
-          run.context.events.publish(run.context.runId, 'agent:callback_received', {
-            sessionId: run.sessionId ?? '',
-          });
-        }
-        return;
-      }
-      await page.waitForTimeout(1_000);
-    }
-    throw new Error('Timed out waiting for the Prava hosted callback.');
+    // The authenticated payment-result endpoint is authoritative. Polling begins
+    // immediately, so an expired callback host or a self-closing hosted tab cannot
+    // mask a successful token issuance or a real Prava failure.
   }
-
   private async fillPaymentFields(page: Page, credential: OneTimeCredential): Promise<void> {
     const cardNumber = await findVisibleInFrames(page, [
       'input[autocomplete="cc-number"]',
@@ -700,6 +683,13 @@ function callbackForRun(value: string, runId: string): string {
   return callback.toString();
 }
 
+function safeOrigin(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '[unavailable]';
+  }
+}
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required for real/dry-run automation.`);

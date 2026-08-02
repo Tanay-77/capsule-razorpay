@@ -18,9 +18,11 @@ const MODES: Array<{ value: AutomationMode; label: string; note: string }> = [
 ];
 
 export default function HomePage() {
-  const [input, setInput] = useState('Provision 3 seats on Linear Basic for a 10-day QA sprint, budget capped at $45');
+  const [input, setInput] = useState('Provision 1 Basic seat on Linear for a 10-day QA sprint, budget capped at $45');
   const [mode, setMode] = useState<AutomationMode>('mock');
   const [runId, setRunId] = useState<string>();
+  const [renewalDemoSeconds, setRenewalDemoSeconds] = useState(90);
+  const [renewalDecisionSeconds, setRenewalDecisionSeconds] = useState(12);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -47,7 +49,12 @@ export default function HomePage() {
       const provisionResponse = await fetch(`${API_URL}/api/agent/provision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ runId: intent.runId, mode }),
+        body: JSON.stringify({
+          runId: intent.runId,
+          mode,
+          renewalDemoSeconds,
+          renewalDecisionSeconds,
+        }),
       });
       const provision = (await provisionResponse.json()) as ApiResponse;
       if (!provisionResponse.ok) {
@@ -105,6 +112,37 @@ export default function HomePage() {
               />
             </div>
 
+            <div className="grid border-b-2 border-ink sm:grid-cols-2">
+              <label className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">
+                <span>
+                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Sprint-end simulation</span>
+                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">Prompt after 5–600 seconds</span>
+                </span>
+                <input
+                  className="w-20 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
+                  min={5}
+                  max={600}
+                  onChange={(event) => setRenewalDemoSeconds(Number(event.target.value))}
+                  type="number"
+                  value={renewalDemoSeconds}
+                />
+              </label>
+              <label className="grid grid-cols-[1fr_auto] items-center gap-4 px-4 py-3">
+                <span>
+                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Silence proof window</span>
+                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">Resolve unanswered after 3–120 seconds</span>
+                </span>
+                <input
+                  className="w-20 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
+                  min={3}
+                  max={120}
+                  onChange={(event) => setRenewalDecisionSeconds(Number(event.target.value))}
+                  type="number"
+                  value={renewalDecisionSeconds}
+                />
+              </label>
+            </div>
+
             <div className="grid lg:grid-cols-[1fr_auto]">
               <div className="grid sm:grid-cols-3">
                 {MODES.map((item, index) => (
@@ -138,7 +176,7 @@ export default function HomePage() {
         ) : null}
 
         <div className="mt-5">
-          <AgentEventStream runId={runId} />
+          <AgentEventStream runId={runId} onRenewalRunStarted={setRunId} />
         </div>
 
         <footer className="grid border-x-4 border-b-4 border-ink text-[9px] font-black uppercase tracking-[0.14em] sm:grid-cols-3">
