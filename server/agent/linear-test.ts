@@ -12,8 +12,12 @@ if (tier !== 'Free' && tier !== 'Basic' && tier !== 'Business') {
 const intent: PurchaseIntent = {
   platform: 'Linear',
   seatCount: positiveInteger('LINEAR_TEST_SEAT_COUNT', 1),
-  durationDays: positiveInteger('LINEAR_TEST_DURATION_DAYS', 30),
-  exactAmount: process.env.LINEAR_TEST_ESTIMATED_AMOUNT ?? '10.00',
+  requestedDurationDays: positiveInteger('LINEAR_TEST_DURATION_DAYS', 30),
+  billingCadence: 'monthly',
+  billingPeriodDays: 30,
+  billablePeriodCount: 1,
+  pricingNotice: 'Linear bills monthly; the actual checkout total remains authoritative.',
+  exactAmount: process.env.LINEAR_TEST_ESTIMATED_AMOUNT ?? '12.00',
   tierName: tier,
 };
 

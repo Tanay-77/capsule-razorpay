@@ -6,7 +6,11 @@ export interface AgentEventPayloads {
     intent: 'purchase';
     platform: 'Linear';
     seatCount: number;
-    durationDays: number;
+    requestedDurationDays: number;
+    billingCadence: 'monthly';
+    billingPeriodDays: 30;
+    billablePeriodCount: 1;
+    pricingNotice: string;
     exactAmount: string;
     tierName: 'Free' | 'Basic' | 'Business';
   };
@@ -81,7 +85,8 @@ export interface AgentEventPayloads {
     periodEndedAt: string;
     decisionDeadline: string;
     seatCount: number;
-    durationDays: number;
+    billingCadence: 'monthly';
+    billingPeriodDays: 30;
     prompt: string;
     freshApprovalRequired: true;
   };

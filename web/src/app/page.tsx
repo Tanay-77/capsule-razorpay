@@ -115,8 +115,8 @@ export default function HomePage() {
             <div className="grid border-b-2 border-ink sm:grid-cols-2">
               <label className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">
                 <span>
-                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Sprint-end simulation</span>
-                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">Prompt after 5–600 seconds</span>
+                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Billing-cycle simulation</span>
+                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">30 days compressed to 5–600 seconds</span>
                 </span>
                 <input
                   className="w-20 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
@@ -163,7 +163,7 @@ export default function HomePage() {
                 disabled={submitting || !input.trim()}
                 type="submit"
               >
-                {submitting ? 'Parsing…' : 'Execute ↵'}
+                {submitting ? 'Parsing…' : 'Execute →'}
               </button>
             </div>
           </form>

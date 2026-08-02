@@ -120,12 +120,20 @@ agentRouter.post('/renewal/approve', (req, res) => {
   originalRun.state.transition('renewal_approved');
 
   const renewalRun = createAgentRun();
-  renewalRun.intent = { ...originalRun.intent };
+  renewalRun.intent = {
+    ...originalRun.intent,
+    requestedDurationDays: originalRun.intent.billingPeriodDays,
+    pricingNotice: `Renewal is for one additional monthly billing cycle, estimated at $${originalRun.intent.exactAmount} before tax and fees.`,
+  };
   renewalRun.context.events.publish(renewalRun.context.runId, 'agent:intent_parsed', {
     intent: 'purchase',
     platform: renewalRun.intent.platform,
     seatCount: renewalRun.intent.seatCount,
-    durationDays: renewalRun.intent.durationDays,
+    requestedDurationDays: renewalRun.intent.requestedDurationDays,
+    billingCadence: renewalRun.intent.billingCadence,
+    billingPeriodDays: renewalRun.intent.billingPeriodDays,
+    billablePeriodCount: renewalRun.intent.billablePeriodCount,
+    pricingNotice: renewalRun.intent.pricingNotice,
     exactAmount: renewalRun.intent.exactAmount,
     tierName: renewalRun.intent.tierName,
   });

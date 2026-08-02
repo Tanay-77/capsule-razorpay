@@ -33,8 +33,12 @@ test('mock mode emits the real event path without browser or Prava calls', async
     const result = await provisioner.provision(run, {
       platform: 'Linear',
       seatCount: 3,
-      durationDays: 10,
-      exactAmount: '10.00',
+      requestedDurationDays: 10,
+      billingCadence: 'monthly',
+      billingPeriodDays: 30,
+      billablePeriodCount: 1,
+      pricingNotice: 'Linear has a one-month minimum. This 10-day sprint requires one monthly billing cycle, estimated at $12.00 before tax and fees.',
+      exactAmount: '12.00',
       tierName: 'Basic',
     }, 'real');
 

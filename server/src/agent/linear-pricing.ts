@@ -3,8 +3,10 @@ import type { PurchaseIntent } from './types.js';
 
 export const LINEAR_PRICING = {
   Free: { monthlyPerSeatCents: 0 },
-  Basic: { monthlyPerSeatCents: 1_000 },
-  Business: { monthlyPerSeatCents: 1_600 },
+  // Monthly checkout previews. Linear's public $10/$16 rates are billed yearly;
+  // the disposable workspace's monthly checkout currently shows $12/$20.
+  Basic: { monthlyPerSeatCents: 1_200 },
+  Business: { monthlyPerSeatCents: 2_000 },
 } as const;
 
 export type LinearTierName = keyof typeof LINEAR_PRICING;
@@ -29,7 +31,11 @@ const ResolvedIntentSchema = z
   .object({
     platform: z.literal('Linear'),
     seatCount: z.number().int().positive().max(10_000),
-    durationDays: z.number().int().positive().max(366),
+    requestedDurationDays: z.number().int().positive().max(366),
+    billingCadence: z.literal('monthly'),
+    billingPeriodDays: z.literal(30),
+    billablePeriodCount: z.literal(1),
+    pricingNotice: z.string().min(1),
     exactAmount: z.string().regex(/^\d+\.\d{2}$/),
     tierName: z.enum(['Free', 'Basic', 'Business']),
   })
@@ -61,9 +67,7 @@ export function resolveLinearEstimate(
 
   const tierName = resolveTier(extraction);
   const monthlyCents = LINEAR_PRICING[tierName].monthlyPerSeatCents;
-  const estimatedCents = Math.round(
-    (monthlyCents * extraction.seatCount * extraction.durationDays) / 30,
-  );
+  const estimatedCents = monthlyCents * extraction.seatCount;
 
   if (extraction.budgetCap !== null) {
     const budgetCents = decimalToCents(extraction.budgetCap);
@@ -77,12 +81,28 @@ export function resolveLinearEstimate(
   return ResolvedIntentSchema.parse({
     platform: 'Linear',
     seatCount: extraction.seatCount,
-    durationDays: extraction.durationDays,
+    requestedDurationDays: extraction.durationDays,
+    billingCadence: 'monthly',
+    billingPeriodDays: 30,
+    billablePeriodCount: 1,
+    pricingNotice: buildPricingNotice(
+      extraction.durationDays,
+      formatCents(estimatedCents),
+    ),
     exactAmount: formatCents(estimatedCents),
     tierName,
   });
 }
 
+function buildPricingNotice(requestedDurationDays: number, estimate: string): string {
+  if (requestedDurationDays < 30) {
+    return `Linear has a one-month minimum. This ${requestedDurationDays}-day sprint requires one monthly billing cycle, estimated at $${estimate} before tax and fees.`;
+  }
+  if (requestedDurationDays === 30) {
+    return `Linear bills monthly. This request maps to one monthly billing cycle, estimated at $${estimate} before tax and fees.`;
+  }
+  return `Linear bills monthly. Capsule will purchase the first monthly cycle, estimated at $${estimate} before tax and fees; continuing the ${requestedDurationDays}-day request requires fresh approval at each renewal.`;
+}
 function resolveTier(extraction: LinearIntentExtraction): LinearTierName {
   if (
     extraction.requestedTier &&

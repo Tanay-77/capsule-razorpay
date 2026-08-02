@@ -213,7 +213,7 @@ function RenewalMomentPanel({
   if (event.type === 'agent:renewal_not_approved') {
     return (
       <section className="border-t-[10px] border-signal bg-paper px-5 py-8 text-ink sm:px-8 sm:py-12" role="status">
-        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Renewal decision / silence recorded</p>
+        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Monthly renewal / silence recorded</p>
         <h2 className="mt-4 text-5xl font-black uppercase leading-[0.86] tracking-[-0.08em] sm:text-7xl lg:text-8xl">
           No approval.<br />No charge.
         </h2>
@@ -232,11 +232,11 @@ function RenewalMomentPanel({
 
   return (
     <section className="border-t-[10px] border-signal bg-paper px-5 py-7 text-ink sm:px-8 sm:py-9" role="status">
-      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Sprint ending / explicit decision required</p>
+      <p className="text-[11px] font-black uppercase tracking-[0.24em] text-signal">Monthly cycle ending / explicit decision required</p>
       <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
           <h2 className="text-3xl font-black uppercase leading-tight tracking-[-0.05em] sm:text-5xl">
-            Renew {readNumber(event.payload.seatCount)} seat{readNumber(event.payload.seatCount) === 1 ? '' : 's'} for {readNumber(event.payload.durationDays)} more days?
+            Approve the next monthly cycle for {readNumber(event.payload.seatCount)} seat{readNumber(event.payload.seatCount) === 1 ? '' : 's'}?
           </h2>
           <p className="mt-4 text-xs font-bold uppercase leading-5 tracking-[0.09em] text-ink/60">
             No session exists yet. Approval starts a fresh quote, a fresh Prava session, and a fresh passkey checkpoint.
@@ -310,10 +310,10 @@ function presentEvent(event: AgentEvent): EventPresentation {
   switch (event.type) {
     case 'agent:intent_parsed':
       return {
-        label: 'Intent parsed',
-        message: `${readNumber(payload.seatCount)} ${readString(payload.tierName)} seat${readNumber(payload.seatCount) === 1 ? '' : 's'} for ${readNumber(payload.durationDays)} days.`,
-        detail: `Provisional estimate · ${formatAmount(readString(payload.exactAmount), 'USD')}`,
-        tone: 'inverse',
+        label: 'Billing constraint surfaced',
+        message: readString(payload.pricingNotice, 'Linear bills in monthly cycles.'),
+        detail: `Original request · ${readNumber(payload.requestedDurationDays)} days · ${formatAmount(readString(payload.exactAmount), 'USD')} first-cycle preview`,
+        tone: 'accent',
       };
     case 'agent:session_created':
       return {
@@ -360,7 +360,7 @@ function presentEvent(event: AgentEvent): EventPresentation {
     case 'agent:renewal_required':
       return {
         label: 'Renewal decision',
-        message: readString(payload.prompt, 'Sprint ending — renew seats?'),
+        message: readString(payload.prompt, 'Monthly billing cycle ending — approve the next cycle?'),
         detail: 'No Prava session exists until explicit approval',
         tone: 'accent',
       };

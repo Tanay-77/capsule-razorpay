@@ -84,7 +84,11 @@ export class IntentParser {
           intent: 'purchase',
           platform: intent.platform,
           seatCount: intent.seatCount,
-          durationDays: intent.durationDays,
+          requestedDurationDays: intent.requestedDurationDays,
+          billingCadence: intent.billingCadence,
+          billingPeriodDays: intent.billingPeriodDays,
+          billablePeriodCount: intent.billablePeriodCount,
+          pricingNotice: intent.pricingNotice,
           exactAmount: intent.exactAmount,
           tierName: intent.tierName,
         });

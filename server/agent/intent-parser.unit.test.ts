@@ -17,17 +17,21 @@ const baseExtraction = {
   ambiguityReason: null,
 } as const;
 
-test('resolves the example with deterministic cent arithmetic', () => {
+test('surfaces the monthly minimum without fake daily proration', () => {
   assert.deepEqual(resolveLinearEstimate(baseExtraction), {
     platform: 'Linear',
     seatCount: 3,
-    durationDays: 10,
-    exactAmount: '10.00',
+    requestedDurationDays: 10,
+    billingCadence: 'monthly',
+    billingPeriodDays: 30,
+    billablePeriodCount: 1,
+    pricingNotice: 'Linear has a one-month minimum. This 10-day sprint requires one monthly billing cycle, estimated at $36.00 before tax and fees.',
+    exactAmount: '36.00',
     tierName: 'Basic',
   });
 });
 
-test('uses current Business pricing', () => {
+test('uses the monthly Business checkout preview', () => {
   assert.equal(
     resolveLinearEstimate({
       ...baseExtraction,
@@ -36,11 +40,11 @@ test('uses current Business pricing', () => {
       requestedTier: 'Business',
       budgetCap: null,
     }).exactAmount,
-    '80.00',
+    '100.00',
   );
 });
 
-test('rounds a two-week Basic estimate to cents', () => {
+test('charges one full Basic billing cycle for a two-week request', () => {
   assert.equal(
     resolveLinearEstimate({
       ...baseExtraction,
@@ -49,7 +53,7 @@ test('rounds a two-week Basic estimate to cents', () => {
       requestedTier: 'Basic',
       budgetCap: null,
     }).exactAmount,
-    '4.67',
+    '12.00',
   );
 });
 
@@ -80,6 +84,6 @@ test('retries exactly once after validation failure', async () => {
   );
 
   assert.equal(calls, 2);
-  assert.equal(result.exactAmount, '10.00');
+  assert.equal(result.exactAmount, '36.00');
   assert.equal(events.recent('retry_test').at(-1)?.type, 'agent:intent_parsed');
 });

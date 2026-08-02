@@ -79,11 +79,11 @@ npm run dev
 Open `http://localhost:3000`. Mock mode still exercises the typed event emitter and SSE transport, but does not launch Playwright or call Prava. Set `ENABLE_MOCK_AGENT=false` and restart the server before a recorded dry or real run.
 ## Renewal-not-approved demo
 
-After a completed mock or real purchase, Capsule compresses `durationDays` into a UI-configured demo delay (90 seconds by default). At the simulated period end it emits `agent:renewal_required` and asks whether to renew the same seat count for the same number of days.
+After a completed mock or real purchase, Capsule compresses one monthly billing cycle into a UI-configured demo delay (90 seconds by default). At the simulated billing boundary it emits `agent:renewal_required` and asks whether to approve the next monthly cycle. The original sprint length remains visible but does not redefine Linear's billing cadence.
 
 The prompt itself creates nothing. Only the explicit **Approve + use passkey** action creates a separate run, re-quotes Linear, and can then create a fresh Prava session requiring a fresh passkey approval. If the decision window expires unanswered, Capsule emits `agent:renewal_not_approved` with server-side evidence that the renewal created no session, issued no token, attempted no merchant checkout, and retained no reusable credential.
 
-For a quick live demo, use mock mode and set the UI controls to 5 seconds for sprint end and 3 seconds for the silence window. Submit the purchase, wait for the renewal prompt, and do not click approve. The interface ends on the large **NO APPROVAL. NO CHARGE.** proof state.
+For a quick live demo, use mock mode and set the UI controls to 5 seconds for the simulated billing-cycle end and 3 seconds for the silence window. Submit the purchase, wait for the renewal prompt, and do not click approve. The interface ends on the large **NO APPROVAL. NO CHARGE.** proof state.
 
 These are in-memory demo timers, not subscription expiry or auto-renewal timers. Restarting Express clears them. Capsule never schedules or submits a renewal payment automatically.
 ## Phase 2 intent parser
@@ -96,13 +96,17 @@ The API returns exactly:
 {
   "platform": "Linear",
   "seatCount": 3,
-  "durationDays": 10,
-  "exactAmount": "10.00",
+  "requestedDurationDays": 10,
+  "billingCadence": "monthly",
+  "billingPeriodDays": 30,
+  "billablePeriodCount": 1,
+  "pricingNotice": "Linear has a one-month minimum. This 10-day sprint requires one monthly billing cycle, estimated at $36.00 before tax and fees.",
+  "exactAmount": "36.00",
   "tierName": "Basic"
 }
 ```
 
-Despite its required field name, `exactAmount` is a provisional preview estimate. It is calculated deterministically in integer cents from the currently published yearly-billed Linear rates: Free `$0`, Basic `$10/user/month`, and Business `$16/user/month`. For sprint previews, Capsule uses a synthetic 30-day proration (`monthly price × seats × durationDays ÷ 30`). Linear does not sell arbitrary day-length subscriptions, and its actual billing/proration rules depend on billing cadence and seat changes. The LinearProvisioner reads the final displayed amount, including tax and fees, before creating the locked Prava session. The Phase 2 estimate is never passed to Prava.
+Despite its required field name, `exactAmount` is a provisional preview of the first monthly checkout cycle. Capsule never invents daily proration: it preserves `requestedDurationDays`, records Linear's monthly cadence separately, and surfaces the mismatch in `pricingNotice`. The monthly preview table is Basic `$12/user/month` and Business `$20/user/month`, matching the disposable workspace's monthly checkout; Linear's public `$10`/`$16` display is the yearly-billed rate. The LinearProvisioner still reads the final displayed amount and currency, including tax and fees, before creating the locked Prava session. That DOM value—not the preview—is sent to Prava. See Linear's [pricing](https://linear.app/pricing) and [billing documentation](https://linear.app/docs/billing-and-plans).
 
 Precision and spend safeguards:
 

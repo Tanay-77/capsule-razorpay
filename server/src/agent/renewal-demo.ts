@@ -21,8 +21,9 @@ export function scheduleRenewalDemo(run: AgentRun, options: RenewalDemoOptions):
       periodEndedAt,
       decisionDeadline,
       seatCount: run.intent.seatCount,
-      durationDays: run.intent.durationDays,
-      prompt: `Sprint ending — renew seats for ${run.intent.durationDays} more days?`,
+      billingCadence: run.intent.billingCadence,
+      billingPeriodDays: run.intent.billingPeriodDays,
+      prompt: 'Monthly billing cycle ending — approve the next monthly cycle?',
       freshApprovalRequired: true,
     });
 
