@@ -6,7 +6,7 @@ I built [Capsule](https://github.com/Tanay-77/capsule), an AI purchasing agent t
 
 That led me to a question about UPI Autopay: what happens when a customer revokes a mandate while a debit is already in the execution pipeline?
 
-I have not found public evidence confirming that Razorpay has a production race condition here. I reached out to engineers at Razorpay for context, but haven't received a response yet — so I haven't treated this as a confirmed Razorpay issue. Instead, I approached it as a hypothesis that can be experimentally verified. This document therefore does **not** claim a Razorpay vulnerability. It identifies a consistency question that is not fully specified by the public API documentation and proposes a concrete test and mitigation.
+I have not found public evidence confirming that Razorpay has a production race condition here. I reached out to engineers at Razorpay for context, but haven't received a response yet - so I haven't treated this as a confirmed Razorpay issue. Instead, I approached it as a hypothesis that can be experimentally verified. This document therefore does **not** claim a Razorpay vulnerability. It identifies a consistency question that is not fully specified by the public API documentation and proposes a concrete test and mitigation.
 
 ---
 
@@ -22,11 +22,11 @@ The documented flow is:
 4. Razorpay provides APIs to fetch, cancel, or delete the token/mandate.
 5. Razorpay recommends webhooks for tracking mandate and payment status changes.
 
-Source: [Razorpay — UPI Autopay](https://razorpay.com/docs/payments/payment-gateway/s2s-integration/recurring-payments/upi/?preferred-country=IN)
+Source: [Razorpay - UPI Autopay](https://razorpay.com/docs/payments/payment-gateway/s2s-integration/recurring-payments/upi/?preferred-country=IN)
 
 Razorpay's TPAP Pro documentation separately exposes mandate operations including create, update/revoke, pause/resume, approve, reject, and fetch.
 
-Source: [Razorpay — Mandate APIs](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/?preferred-country=IN)
+Source: [Razorpay - Mandate APIs](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/?preferred-country=IN)
 
 The revoke operation is explicitly represented as a separate API action:
 
@@ -37,7 +37,7 @@ action = revoke
 
 Razorpay's documentation also states that a mandate can reach the terminal `completed` state when it has been revoked by the payer or payee.
 
-Source: [Razorpay — Update or Revoke a Mandate](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/update-revoke-mandate/)
+Source: [Razorpay - Update or Revoke a Mandate](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/update-revoke-mandate/)
 
 ---
 
@@ -56,7 +56,7 @@ In particular, the public documentation does not establish whether an already-qu
 
 That distinction matters.
 
-**This is the research question — not a claim that the race already exists.**
+**This is the research question - not a claim that the race already exists.**
 
 ---
 
@@ -82,7 +82,7 @@ sequenceDiagram
     D->>D: Execute or reject
 ```
 
-The open question in that diagram: when does the debit executor actually see the revoked state — before, during, or after it checks authorization? The important unknown is the ordering between the final authorization check and the revocation.
+The open question in that diagram: when does the debit executor actually see the revoked state - before, during, or after it checks authorization? The important unknown is the ordering between the final authorization check and the revocation.
 
 ---
 
@@ -211,13 +211,13 @@ Five orderings cover the space worth testing:
 
 | Test | Sequence | Question |
 |---|---|---|
-| **A — Revoke before debit** | Revoke → confirmed → submit debit | Baseline: is the debit rejected once revocation is confirmed? |
-| **B — Debit queued before revoke** | Submit debit → queued/executing → revoke | Does the already-queued debit still execute, or does the executor re-check the authoritative state? |
-| **C — Concurrent** | Revoke and debit fired at the same time | Is there a *defined, consistent* ordering rule — not necessarily "revoke always wins," but a rule at all? |
-| **D — Revoke acknowledged, then debit** | Revoke → response confirms completion → debit request | Can a debit still execute after revocation is acknowledged as complete? |
-| **E — Debit submitted, then revoke** | Debit submitted → revoke → debit reaches final processing | At what point does revocation stop being able to halt the transaction? This matters because "revoke the mandate" and "cancel an already-submitted payment" may not be the same operation underneath. |
+| **A - Revoke before debit** | Revoke → confirmed → submit debit | Baseline: is the debit rejected once revocation is confirmed? |
+| **B - Debit queued before revoke** | Submit debit → queued/executing → revoke | Does the already-queued debit still execute, or does the executor re-check the authoritative state? |
+| **C - Concurrent** | Revoke and debit fired at the same time | Is there a *defined, consistent* ordering rule - not necessarily "revoke always wins," but a rule at all? |
+| **D - Revoke acknowledged, then debit** | Revoke → response confirms completion → debit request | Can a debit still execute after revocation is acknowledged as complete? |
+| **E - Debit submitted, then revoke** | Debit submitted → revoke → debit reaches final processing | At what point does revocation stop being able to halt the transaction? This matters because "revoke the mandate" and "cancel an already-submitted payment" may not be the same operation underneath. |
 
-Test A is the baseline sanity check. B through E are where the actual research value is — they isolate exactly when, in the pipeline, revocation stops being effective.
+Test A is the baseline sanity check. B through E are where the actual research value is - they isolate exactly when, in the pipeline, revocation stops being effective.
 
 ---
 
@@ -364,7 +364,7 @@ Razorpay is also implementing UPI Autopay interoperability based on NPCI Circula
 
 Razorpay's documentation says this changes the relationship between mandates, payment processors, and UPI apps. It also describes Razorpay maintaining mandate records and updating mandate information during migration and payer-porting flows.
 
-Source: [Razorpay — UPI Autopay Interoperability](https://razorpay.com/docs/payments/recurring-payments/autopay-interoperability/?preferred-country=IN)
+Source: [Razorpay - UPI Autopay Interoperability](https://razorpay.com/docs/payments/recurring-payments/autopay-interoperability/?preferred-country=IN)
 
 This makes the consistency question even more interesting from a systems perspective: as mandates become interoperable across processors and UPI apps, the system has more state transitions and more actors that can affect mandate state.
 
@@ -406,7 +406,7 @@ It is:
 
 That is the question I would take to a Razorpay engineer.
 
-If the current system already provides an atomic execution-time check, great — the hypothesis is disproved.
+If the current system already provides an atomic execution-time check, great - the hypothesis is disproved.
 
 If it does not, the next engineering question is whether that guarantee can be introduced without compromising UPI semantics, latency, throughput, retries, or idempotency.
 
@@ -416,19 +416,19 @@ That is a much more interesting problem than simply adding another cancellation 
 
 # Sources
 
-1. [Razorpay — UPI Autopay](https://razorpay.com/docs/payments/payment-gateway/s2s-integration/recurring-payments/upi/?preferred-country=IN)
+1. [Razorpay - UPI Autopay](https://razorpay.com/docs/payments/payment-gateway/s2s-integration/recurring-payments/upi/?preferred-country=IN)
    - Documents UPI Autopay, `token_id`, subsequent debits, token/mandate management, and webhooks.
 
-2. [Razorpay — Mandate APIs](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/?preferred-country=IN)
+2. [Razorpay - Mandate APIs](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/?preferred-country=IN)
    - Documents create, update/revoke, pause/resume, approve, reject, and fetch mandate operations.
 
-3. [Razorpay — Update or Revoke a Mandate](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/update-revoke-mandate/)
+3. [Razorpay - Update or Revoke a Mandate](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/update-revoke-mandate/)
    - Documents the `PATCH` revoke operation and mandate status semantics.
 
-4. [Razorpay — Fetch Mandates](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/fetch-mandates/?preferred-country=IN)
+4. [Razorpay - Fetch Mandates](https://razorpay.com/docs/api/payments/tpap-pro/mandate-flow/fetch-mandates/?preferred-country=IN)
    - Documents fetching a mandate by UMN and the mandate status values.
 
-5. [Razorpay — UPI Autopay Interoperability](https://razorpay.com/docs/payments/recurring-payments/autopay-interoperability/?preferred-country=IN)
+5. [Razorpay - UPI Autopay Interoperability](https://razorpay.com/docs/payments/recurring-payments/autopay-interoperability/?preferred-country=IN)
    - Documents the 2026 interoperability changes and migration/porting model.
 
 ---
