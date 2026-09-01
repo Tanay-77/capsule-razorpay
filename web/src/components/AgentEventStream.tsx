@@ -138,7 +138,7 @@ export function AgentEventStream({
       {approvalPending ? (
         <div className="border-t-4 border-ink bg-signal px-5 py-5 text-ink" role="status">
           <p className="text-[10px] font-black uppercase tracking-[0.2em]">Passkey / human checkpoint</p>
-          <p className="mt-2 text-xl font-black uppercase leading-tight sm:text-2xl">Approve in the secure Prava window</p>
+          <p className="mt-2 text-xl font-black uppercase leading-tight sm:text-2xl">Open the Razorpay Payment Link to pay</p>
           <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/65">Capsule is paused. No checkout continues without you.</p>
         </div>
       ) : null}
@@ -240,7 +240,7 @@ function RenewalMomentPanel({
             Approve the next monthly cycle for {readNumber(event.payload.seatCount)} seat{readNumber(event.payload.seatCount) === 1 ? '' : 's'}?
           </h2>
           <p className="mt-4 text-xs font-bold uppercase leading-5 tracking-[0.09em] text-ink/60">
-            No session exists yet. Approval starts a fresh quote, a fresh Prava session, and a fresh passkey checkpoint.
+            No order exists yet. Approval starts a fresh quote, a fresh Razorpay Order, and a fresh passkey checkpoint.
           </p>
         </div>
         <button
@@ -316,34 +316,42 @@ function presentEvent(event: AgentEvent): EventPresentation {
         detail: `Original request · ${readNumber(payload.requestedDurationDays)} days · ${formatAmount(readString(payload.exactAmount), 'USD')} first-cycle preview`,
         tone: 'accent',
       };
-    case 'agent:session_created':
+    case 'agent:order_created':
       return {
-        label: 'Prava session',
-        message: 'Exact-amount payment session created.',
-        detail: `Session ${shortId(readString(payload.sessionId))} · credentials not issued yet`,
+        label: 'Razorpay order',
+        message: 'Exact-amount Razorpay Order created.',
+        detail: `Order ${shortId(readString(payload.orderId))} · ₹${readNumber(payload.amountPaise) / 100} ${readString(payload.currency, 'INR')}`,
         tone: 'default',
+      };
+    case 'agent:payment_link_created':
+      return {
+        label: 'Payment link',
+        message: 'Razorpay Payment Link created with tight expiry.',
+        detail: readString(payload.shortUrl) || 'Link pending',
+        tone: 'default',
+      };
+    case 'agent:awaiting_payment':
+      return {
+        label: 'Awaiting payment',
+        message: 'Open the Payment Link to complete checkout on Razorpay.',
+        detail: readString(payload.paymentLinkUrl) || undefined,
+        tone: 'accent',
+      };
+    case 'agent:webhook_confirmed':
+      return {
+        label: 'Payment confirmed',
+        message: 'Razorpay webhook confirmed payment. Amount rechecked.',
+        detail: `Payment ${shortId(readString(payload.paymentId))} · ${readNumber(payload.amountPaidPaise)} paise`,
+        tone: 'inverse',
       };
     case 'agent:passkey_required':
       return {
         label: 'Human approval required',
-        message: readString(payload.message, 'Approve this purchase with your passkey in the secure Prava window.'),
+        message: readString(payload.message, 'Approve this exact-amount purchase with your passkey.'),
         detail: 'Face ID / Touch ID / device passkey · no approval is automated',
         tone: 'accent',
       };
-    case 'agent:awaiting_card_entry':
-      return {
-        label: 'Secure card window',
-        message: 'Prava is waiting for saved-card selection or sandbox card entry.',
-        detail: 'Raw card details never enter Capsule',
-        tone: 'muted',
-      };
-    case 'agent:token_issued':
-      return {
-        label: 'Token issued',
-        message: 'Single-use network credential received and held in server memory.',
-        detail: 'Merchant + exact amount scoped · sensitive values hidden',
-        tone: 'inverse',
-      };
+
     case 'agent:dom_step':
       return {
         label: `DOM / ${readString(payload.status, 'update')}`,
@@ -355,21 +363,21 @@ function presentEvent(event: AgentEvent): EventPresentation {
       return {
         label: 'Checkout total',
         message: `${formatAmount(readString(payload.amount), readString(payload.currency))} read from the merchant page.`,
-        detail: readString(payload.source) === 'mock' ? 'Mock preview amount' : 'This value locks the Prava session',
+        detail: readString(payload.source) === 'mock' ? 'Mock preview amount' : 'This value locks the Razorpay Order amount',
         tone: 'default',
       };
     case 'agent:renewal_required':
       return {
         label: 'Renewal decision',
         message: readString(payload.prompt, 'Monthly billing cycle ending — approve the next cycle?'),
-        detail: 'No Prava session exists until explicit approval',
+        detail: 'No Razorpay Order exists until explicit approval',
         tone: 'accent',
       };
     case 'agent:renewal_approved':
       return {
         label: 'Renewal approved',
         message: 'A fresh purchase run is starting from a new quote.',
-        detail: 'Fresh Prava session + fresh passkey required',
+        detail: 'Fresh Razorpay Order + fresh passkey required',
         tone: 'inverse',
       };
     case 'agent:renewal_not_approved':
@@ -392,13 +400,7 @@ function presentEvent(event: AgentEvent): EventPresentation {
         detail: `Phase · ${humanize(readString(payload.phase, 'unknown'))}`,
         tone: 'error',
       };
-    case 'agent:payment_result_polled':
-      return {
-        label: 'Prava poll',
-        message: `Payment state: ${humanize(readString(payload.status, 'pending'))}.`,
-        detail: `Attempt ${readNumber(payload.attempt)}`,
-        tone: 'muted',
-      };
+
     case 'agent:automation_mode':
       return {
         label: 'Run mode',
@@ -408,7 +410,7 @@ function presentEvent(event: AgentEvent): EventPresentation {
     case 'agent:dry_run_complete':
       return {
         label: 'Dry-run stop',
-        message: 'Quote and real Prava session verified. Purchase was not submitted.',
+        message: 'Quote and Razorpay Order verified. Purchase was not submitted.',
         detail: formatAmount(readString(payload.amount), readString(payload.currency)),
         tone: 'accent',
       };
@@ -441,7 +443,7 @@ function isApprovalPending(events: AgentEvent[]): boolean {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const type = events[index]?.type;
     if (type === 'agent:passkey_required') return true;
-    if (type === 'agent:token_issued' || type === 'agent:complete' || type === 'agent:error') return false;
+    if (type === 'agent:awaiting_payment' || type === 'agent:webhook_confirmed' || type === 'agent:complete' || type === 'agent:error') return false;
   }
   return false;
 }
@@ -450,10 +452,11 @@ function phaseFor(type: AgentEventType): string | undefined {
   const phases: Partial<Record<AgentEventType, string>> = {
     'agent:intent_parsed': 'INTENT READY',
     'agent:checkout_total_read': 'TOTAL READ',
-    'agent:session_created': 'SESSION LIVE',
-    'agent:awaiting_card_entry': 'CARD ENTRY',
+    'agent:order_created': 'ORDER CREATED',
     'agent:passkey_required': 'APPROVAL',
-    'agent:token_issued': 'TOKEN READY',
+    'agent:payment_link_created': 'LINK CREATED',
+    'agent:awaiting_payment': 'AWAITING PAYMENT',
+    'agent:webhook_confirmed': 'PAYMENT CONFIRMED',
     'agent:dom_step': 'AUTOMATING',
     'agent:dry_run_complete': 'DRY RUN DONE',
     'agent:complete': 'COMPLETE',

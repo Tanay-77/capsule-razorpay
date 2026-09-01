@@ -13,7 +13,7 @@ interface ApiResponse {
 
 const MODES: Array<{ value: AutomationMode; label: string; note: string }> = [
   { value: 'mock', label: 'MOCK', note: 'No browser or payment network' },
-  { value: 'dry-run', label: 'DRY', note: 'Real quote + Prava session' },
+  { value: 'dry-run', label: 'DRY', note: 'Real quote + Razorpay Order' },
   { value: 'real', label: 'REAL', note: 'Can submit a sandbox purchase' },
 ];
 
@@ -190,7 +190,7 @@ export default function HomePage() {
         </div>
 
         <footer className="grid border-x-4 border-b-4 border-ink text-[9px] font-black uppercase tracking-[0.14em] sm:grid-cols-3">
-          <p className="border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">01 / Actual total read before session</p>
+          <p className="border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">01 / Actual total read before order</p>
           <p className="border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">02 / Passkey stays human-controlled</p>
           <p className="px-4 py-3">03 / No persistent merchant card</p>
         </footer>

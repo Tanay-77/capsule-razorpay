@@ -10,7 +10,7 @@ export type PurchaseIntent = {
   billablePeriodCount: 1;
   /** Human-readable disclosure when requested duration and billing granularity differ. */
   pricingNotice: string;
-  /** Provisional first-cycle estimate. Never send this value to Prava. */
+  /** Provisional first-cycle estimate. Converted to paise at the Razorpay API boundary. */
   exactAmount: string;
   tierName: 'Free' | 'Basic' | 'Business';
 };
@@ -20,11 +20,10 @@ export type AgentState =
   | 'intent_parsed'
   | 'quoting_checkout'
   | 'checkout_quoted'
-  | 'session_created'
-  | 'awaiting_card_entry'
-  | 'callback_received'
-  | 'token_issued'
-  | 'automating_checkout'
+  | 'order_created'
+  | 'passkey_approved'
+  | 'awaiting_payment'
+  | 'webhook_confirmed'
   | 'dry_run_complete'
   | 'complete'
   | 'renewal_required'

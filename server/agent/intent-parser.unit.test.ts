@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import OpenAI from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import { IntentParser } from '../src/agent/intent-parser.js';
 import {
   IntentParserValidationError,
@@ -67,15 +67,15 @@ test('rejects a missing duration instead of guessing', () => {
 test('retries exactly once after validation failure', async () => {
   let calls = 0;
   const fakeClient = {
-    responses: {
-      parse: async () => {
+    models: {
+      generateContent: async () => {
         calls += 1;
         return {
-          output_parsed: calls === 1 ? null : baseExtraction,
+          text: calls === 1 ? null : JSON.stringify(baseExtraction),
         };
       },
     },
-  } as unknown as OpenAI;
+  } as unknown as GoogleGenAI;
   const parser = new IntentParser({ client: fakeClient });
   const events = new AgentEventEmitter();
   const result = await parser.parse(

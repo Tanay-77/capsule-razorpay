@@ -8,8 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.test.json",
-    "prava:health": "curl https://sandbox.api.prava.space/health",
-    "prava:test": "tsx prava/test.ts",
+    "razorpay:health": "curl -s -o /dev/null -w \"%{http_code}\" https://api.razorpay.com/v1/",
     "agent:unit": "tsx --test agent/*.unit.test.ts",
     "agent:test": "tsx agent/test.ts",
     "linear:dry-run": "tsx agent/linear-test.ts",
@@ -17,10 +16,10 @@
     "linear:login": "tsx agent/linear-login.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.20.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "openai": "^7.3.0",
     "playwright": "^1.62.1",
     "zod": "^4.4.3"
   },

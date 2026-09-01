@@ -23,7 +23,7 @@ test('reads Linear workspace user count when checkout has no quantity input', ()
   assert.equal(parseUserCountFromVisibleText('Free plan\nUsers\n1\nManage'), 1);
   assert.equal(parseUserCountFromVisibleText('Order summary\n3 users\nTotal\n$36.00'), 3);
 });
-test('mock mode emits the real event path without browser or Prava calls', async () => {
+test('mock mode emits the real event path without browser or Razorpay calls', async () => {
   const previous = process.env.ENABLE_MOCK_AGENT;
   process.env.ENABLE_MOCK_AGENT = 'true';
   try {
@@ -46,9 +46,9 @@ test('mock mode emits the real event path without browser or Prava calls', async
     assert.equal(run.state.current, 'complete');
     const types = run.context.events.recent(run.context.runId).map((event) => event.type);
     assert.ok(types.includes('agent:checkout_total_read'));
-    assert.ok(types.includes('agent:session_created'));
+    assert.ok(types.includes('agent:order_created'));
     assert.ok(types.includes('agent:passkey_required'));
-    assert.ok(types.includes('agent:token_issued'));
+    assert.ok(types.includes('agent:webhook_confirmed'));
     assert.ok(types.includes('agent:complete'));
   } finally {
     if (previous === undefined) delete process.env.ENABLE_MOCK_AGENT;

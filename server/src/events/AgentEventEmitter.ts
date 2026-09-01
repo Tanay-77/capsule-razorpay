@@ -20,42 +20,32 @@ export interface AgentEventPayloads {
     status: 'started' | 'succeeded' | 'validation_failed' | 'failed';
   };
   'agent:state_changed': { from: string; to: string };
-  'agent:prava_request': {
-    operation: 'create_session' | 'get_payment_result' | 'report_status';
+  'agent:razorpay_request': {
+    operation: 'create_order' | 'create_payment_link';
     status: 'started' | 'succeeded' | 'failed';
   };
-  'agent:session_created': {
-    sessionId: string;
+  'agent:order_created': {
     orderId: string;
-    expiresAt: string;
-    hostedUrl: string;
-  };
-  'agent:awaiting_card_entry': {
-    sessionId: string;
-    hostedUrl: string;
-    callbackUrl: string;
+    amountPaise: number;
+    currency: string;
   };
   'agent:passkey_required': {
-    sessionId: string;
-    hostedUrl: string;
+    orderId: string;
     message: string;
   };
-  'agent:callback_received': { sessionId: string };
-  'agent:payment_result_polled': {
-    sessionId: string;
-    attempt: number;
-    status: 'pending' | 'processing' | 'awaiting_result' | 'completed' | 'failed';
-    nextPollInMs?: number;
+  'agent:payment_link_created': {
+    paymentLinkId: string;
+    shortUrl: string;
+    expireBy: number | null;
   };
-  'agent:token_issued': {
-    sessionId: string;
-    transactionReferenceId: string;
-    credentialAvailable: true;
+  'agent:awaiting_payment': {
+    orderId: string;
+    paymentLinkUrl: string;
   };
-  'agent:status_reported': {
-    sessionId: string;
-    transactionReferenceId: string;
-    transactionStatus: 'APPROVED' | 'DECLINED';
+  'agent:webhook_confirmed': {
+    orderId: string;
+    paymentId: string;
+    amountPaidPaise: number;
   };
   'agent:dom_step': {
     step: string;
@@ -64,7 +54,7 @@ export interface AgentEventPayloads {
   };
   'agent:automation_mode': { mode: 'mock' | 'dry-run' | 'real' };
   'agent:manual_action_required': {
-    action: 'linear_login' | 'linear_mfa' | 'prava_card_entry';
+    action: 'linear_login' | 'linear_mfa' | 'razorpay_payment';
     message: string;
     url?: string;
   };
@@ -76,10 +66,9 @@ export interface AgentEventPayloads {
   'agent:checkout_total_changed': { previous: string; current: string };
   'agent:screenshot_saved': { path: string };
   'agent:dry_run_complete': {
-    sessionId: string;
+    orderId: string;
     amount: string;
     currency: string;
-    hostedUrl: string;
   };
   'agent:renewal_required': {
     periodEndedAt: string;

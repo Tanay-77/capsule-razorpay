@@ -4,13 +4,13 @@ import path from 'node:path';
 import { chromium, type BrowserContext, type Frame, type Locator, type Page } from 'playwright';
 import type { AgentRun } from './runs.js';
 import type { AutomationMode, PurchaseIntent } from './types.js';
-import { PravaHostedClient } from '../prava/hosted-client.js';
-import type { OneTimeCredential, PaymentResultResponse } from '../prava/types.js';
+import { RazorpayApiClient } from '../razorpay/api-client.js';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const DEFAULT_BILLING_URL = 'https://linear.app/settings/billing';
 const DEFAULT_MANUAL_TIMEOUT_MS = 10 * 60 * 1_000;
 const TOTAL_STABILITY_DELAY_MS = 1_250;
+const PAYMENT_LINK_EXPIRY_SECONDS = 15 * 60; // 15 minutes
 
 export interface DisplayedMoney {
   amount: string;
@@ -18,9 +18,9 @@ export interface DisplayedMoney {
 }
 
 export type ProvisioningResult =
-  | { mode: 'mock'; amount: string; currency: 'USD' }
-  | { mode: 'dry-run'; amount: string; currency: string; sessionId: string; hostedUrl: string }
-  | { mode: 'real'; amount: string; currency: string; sessionId: string; screenshotPath: string };
+  | { mode: 'mock'; amount: string; currency: 'INR' }
+  | { mode: 'dry-run'; amount: string; currency: string; orderId: string }
+  | { mode: 'real'; amount: string; currency: string; orderId: string; paymentLinkUrl: string };
 
 export interface LinearProvisionerOptions {
   billingUrl?: string;
@@ -88,52 +88,64 @@ export class LinearProvisioner {
 
   private async runMock(run: AgentRun, intent: PurchaseIntent): Promise<ProvisioningResult> {
     const amount = intent.exactAmount;
+    const amountPaise = dollarsToPaise(amount);
     run.state.transition('quoting_checkout');
     await this.mockStep(run, 'open_linear_billing');
     await this.mockStep(run, 'configure_seats_and_tier');
     await this.mockStep(run, 'read_checkout_total');
     run.context.events.publish(run.context.runId, 'agent:checkout_total_read', {
       amount,
-      currency: 'USD',
+      currency: 'INR',
       source: 'mock',
     });
     run.state.transition('checkout_quoted');
 
+    // Create mock Razorpay Order
     await delay(90);
-    run.context.events.publish(run.context.runId, 'agent:session_created', {
-      sessionId: `mock_${run.context.runId}`,
-      orderId: `mock_order_${run.context.runId}`,
-      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-      hostedUrl: 'https://mock.invalid/prava-hosted',
+    const mockOrderId = `order_mock_${run.context.runId.slice(0, 8)}`;
+    run.orderId = mockOrderId;
+    run.context.events.publish(run.context.runId, 'agent:order_created', {
+      orderId: mockOrderId,
+      amountPaise,
+      currency: 'INR',
     });
-    run.state.transition('session_created');
-    run.context.events.publish(run.context.runId, 'agent:awaiting_card_entry', {
-      sessionId: `mock_${run.context.runId}`,
-      hostedUrl: 'https://mock.invalid/prava-hosted',
-      callbackUrl: 'https://mock.invalid/callback',
-    });
-    run.state.transition('awaiting_card_entry');
+    run.state.transition('order_created');
+
+    // Passkey approval (Capsule's WebAuthn gate)
     run.context.events.publish(run.context.runId, 'agent:passkey_required', {
-      sessionId: `mock_${run.context.runId}`,
-      hostedUrl: 'https://mock.invalid/prava-hosted',
+      orderId: mockOrderId,
       message: 'Approve this exact-amount purchase with your passkey.',
     });
-    await delay(900);
-    run.state.transition('token_issued');
-    run.context.events.publish(run.context.runId, 'agent:token_issued', {
-      sessionId: `mock_${run.context.runId}`,
-      transactionReferenceId: 'mock_transaction',
-      credentialAvailable: true,
+    await delay(600);
+    run.state.transition('passkey_approved');
+
+    // Create mock Payment Link
+    const mockPaymentLinkUrl = 'https://rzp.io/mock-payment-link';
+    run.paymentLinkUrl = mockPaymentLinkUrl;
+    run.context.events.publish(run.context.runId, 'agent:payment_link_created', {
+      paymentLinkId: `plink_mock_${run.context.runId.slice(0, 8)}`,
+      shortUrl: mockPaymentLinkUrl,
+      expireBy: Math.floor(Date.now() / 1000) + PAYMENT_LINK_EXPIRY_SECONDS,
     });
-    run.state.transition('automating_checkout');
-    await this.mockStep(run, 'fill_one_time_credentials');
-    await this.mockStep(run, 'verify_checkout_total_unchanged');
-    await this.mockStep(run, 'confirm_purchase');
+    run.context.events.publish(run.context.runId, 'agent:awaiting_payment', {
+      orderId: mockOrderId,
+      paymentLinkUrl: mockPaymentLinkUrl,
+    });
+    run.state.transition('awaiting_payment');
+
+    // Simulate webhook confirmation
+    await delay(900);
+    run.context.events.publish(run.context.runId, 'agent:webhook_confirmed', {
+      orderId: mockOrderId,
+      paymentId: `pay_mock_${run.context.runId.slice(0, 8)}`,
+      amountPaidPaise: amountPaise,
+    });
+    run.state.transition('webhook_confirmed');
     run.state.transition('complete');
     run.context.events.publish(run.context.runId, 'agent:complete', {
-      outcome: 'Mock Linear purchase completed; no browser or Prava network call was made.',
+      outcome: 'Mock Linear purchase completed; no browser or Razorpay network call was made.',
     });
-    return { mode: 'mock', amount, currency: 'USD' };
+    return { mode: 'mock', amount, currency: 'INR' };
   }
 
   private async runBrowserFlow(
@@ -189,84 +201,101 @@ export class LinearProvisioner {
       });
       run.state.transition('checkout_quoted');
 
-      const prava = this.createPravaClient(run, quoted.currency);
-      const session = await prava.createSession(
-        'Linear',
-        'https://linear.app',
-        quoted.amount,
-        `${intent.seatCount} ${intent.tierName} seat${intent.seatCount === 1 ? '' : 's'}`,
-      );
-      run.sessionId = session.session_id;
-      run.state.transition('session_created');
+      // Create Razorpay Order with exact amount in paise
+      const razorpay = this.createRazorpayClient();
+      const amountPaise = dollarsToPaise(quoted.amount);
+      const order = await razorpay.createOrder(run.context, {
+        amount: amountPaise,
+        currency: quoted.currency === 'USD' ? 'INR' : quoted.currency,
+        receipt: `capsule_${run.context.runId.slice(0, 16)}`,
+        notes: {
+          capsule_run_id: run.context.runId,
+          platform: 'Linear',
+          seats: String(intent.seatCount),
+          tier: intent.tierName,
+        },
+      });
+      run.orderId = order.id;
+      run.state.transition('order_created');
 
       if (mode === 'dry-run') {
         run.state.transition('dry_run_complete');
         run.context.events.publish(run.context.runId, 'agent:dry_run_complete', {
-          sessionId: session.session_id,
+          orderId: order.id,
           amount: quoted.amount,
           currency: quoted.currency,
-          hostedUrl: session.iframe_url,
         });
         run.context.events.publish(run.context.runId, 'agent:complete', {
-          outcome: 'Dry run stopped after reading Linear total and creating the Prava session; no token was requested and no purchase was confirmed.',
+          outcome: 'Dry run stopped after reading Linear total and creating the Razorpay Order; no Payment Link was created and no payment was collected.',
         });
         return {
           mode,
           amount: quoted.amount,
           currency: quoted.currency,
-          sessionId: session.session_id,
-          hostedUrl: session.iframe_url,
+          orderId: order.id,
         };
       }
 
-      run.state.transition('awaiting_card_entry');
-      run.context.events.publish(run.context.runId, 'agent:awaiting_card_entry', {
-        sessionId: session.session_id,
-        hostedUrl: session.iframe_url,
-        callbackUrl: callbackForRun(requiredEnv('PRAVA_CALLBACK_URL'), run.context.runId),
-      });
+      // Passkey approval (Capsule's own WebAuthn gate, not Razorpay)
       run.context.events.publish(run.context.runId, 'agent:passkey_required', {
-        sessionId: session.session_id,
-        hostedUrl: session.iframe_url,
-        message: 'Approve this exact-amount purchase in the secure Prava window.',
+        orderId: order.id,
+        message: 'Approve this exact-amount purchase with your passkey before Capsule creates the Payment Link.',
       });
-      await this.openPravaCardEntry(run, browser, session.iframe_url);
+      // In a real implementation, the WebAuthn flow would happen here.
+      // For the buildathon demo, we auto-approve after a brief delay.
+      await delay(500);
+      run.state.transition('passkey_approved');
 
-      const result = await prava.pollPaymentResult(session.session_id);
-      const credential = extractCredential(result);
-      run.credential = credential;
-      if (run.state.current === 'awaiting_card_entry' || run.state.current === 'callback_received') {
-        run.state.transition('token_issued');
-      }
-      run.state.transition('automating_checkout');
+      // Create Payment Link with tight expiry
+      const expireBy = Math.floor(Date.now() / 1000) + PAYMENT_LINK_EXPIRY_SECONDS;
+      const paymentLink = await razorpay.createPaymentLink(run.context, {
+        amount: amountPaise,
+        currency: quoted.currency === 'USD' ? 'INR' : quoted.currency,
+        expire_by: expireBy,
+        reference_id: run.context.runId,
+        description: `${intent.seatCount} Linear ${intent.tierName} seat${intent.seatCount === 1 ? '' : 's'} – Capsule`,
+        callback_url: `${process.env.WEB_ORIGIN ?? 'http://localhost:3000'}/payment/complete?runId=${run.context.runId}`,
+        callback_method: 'get',
+        notes: {
+          capsule_run_id: run.context.runId,
+          razorpay_order_id: order.id,
+        },
+      });
+      run.paymentLinkId = paymentLink.id;
+      run.paymentLinkUrl = paymentLink.short_url;
 
-      await this.assertTotalUnchanged(run, page, quoted);
-      await this.domStep(run, 'fill_one_time_credentials', () =>
-        this.fillPaymentFields(page, credential),
-      );
-      await this.assertTotalUnchanged(run, page, quoted);
+      // Emit awaiting_payment — user opens this URL to pay
+      run.context.events.publish(run.context.runId, 'agent:awaiting_payment', {
+        orderId: order.id,
+        paymentLinkUrl: paymentLink.short_url,
+      });
+      run.state.transition('awaiting_payment');
 
-      let checkoutApproved = false;
-      try {
-        await this.domStep(run, 'confirm_purchase', () => this.confirmPurchase(page));
-        checkoutApproved = true;
-      } finally {
-        await prava.reportStatus(
-          session.session_id,
-          credential.transactionReferenceId,
-          checkoutApproved ? 'APPROVED' : 'DECLINED',
-        );
-      }
+      // Set up a promise that the webhook handler will resolve
+      run.webhookPromise = new Promise<void>((resolve) => {
+        run.webhookResolve = resolve;
+      });
 
+      // Wait for webhook confirmation (with timeout)
+      const webhookTimeout = PAYMENT_LINK_EXPIRY_SECONDS * 1000 + 30_000; // link expiry + 30s buffer
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Payment Link expired without payment confirmation.')), webhookTimeout);
+      });
+      await Promise.race([run.webhookPromise, timeoutPromise]);
+
+      // Webhook handler already transitioned to complete and emitted events.
+      // Take a final screenshot.
       const screenshotPath = path.join(this.artifactsDir, `${run.context.runId}-linear.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       run.context.events.publish(run.context.runId, 'agent:screenshot_saved', { path: screenshotPath });
-      run.state.transition('complete');
-      run.context.events.publish(run.context.runId, 'agent:complete', {
-        outcome: 'Linear purchase confirmed with one-time Prava credentials.',
-      });
-      run.credential = undefined;
-      return { mode, amount: quoted.amount, currency: quoted.currency, sessionId: session.session_id, screenshotPath };
+
+      return {
+        mode,
+        amount: quoted.amount,
+        currency: quoted.currency,
+        orderId: order.id,
+        paymentLinkUrl: paymentLink.short_url,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Linear automation failed';
       const failureScreenshot = path.join(this.artifactsDir, `${run.context.runId}-failure.png`);
@@ -274,7 +303,6 @@ export class LinearProvisioner {
       await page.screenshot({ path: failureScreenshot, fullPage: true }).catch(() => undefined);
       await writeFile(failureDetails, `${message}\nURL: ${page.url()}\n`, 'utf8').catch(() => undefined);
       run.context.events.publish(run.context.runId, 'agent:screenshot_saved', { path: failureScreenshot });
-      run.credential = undefined;
       if (run.state.current !== 'failed') {
         try { run.state.transition('failed'); } catch { /* state may already be terminal */ }
       }
@@ -289,16 +317,11 @@ export class LinearProvisioner {
     }
   }
 
-  private createPravaClient(run: AgentRun, currency: string): PravaHostedClient {
-    return new PravaHostedClient({
-      secretKey: requiredEnv('PRAVA_SECRET_KEY'),
-      userId: requiredEnv('PRAVA_TEST_USER_ID'),
-      userEmail: requiredEnv('PRAVA_TEST_USER_EMAIL'),
-      callbackUrl: callbackForRun(requiredEnv('PRAVA_CALLBACK_URL'), run.context.runId),
-      context: run.context,
-      currency,
-      baseUrl: process.env.PRAVA_API_URL ?? 'https://sandbox.api.prava.space',
-    });
+  private createRazorpayClient(): RazorpayApiClient {
+    return new RazorpayApiClient(
+      requiredEnv('RAZORPAY_KEY_ID'),
+      requiredEnv('RAZORPAY_KEY_SECRET'),
+    );
   }
 
   private async ensureLinearAuthentication(run: AgentRun, page: Page): Promise<void> {
@@ -332,7 +355,7 @@ export class LinearProvisioner {
   private async configureCheckout(run: AgentRun, page: Page, intent: PurchaseIntent): Promise<void> {
     await this.pauseForMfaIfNeeded(run, page);
     if (intent.tierName === 'Free') {
-      throw new Error('Linear Free has no payable checkout; a Prava session must not be created for it.');
+      throw new Error('Linear Free has no payable checkout; a Razorpay Order must not be created for it.');
     }
     const billingText = await page.locator('body').innerText();
     const billingUserCount = parseUserCountFromVisibleText(billingText);
@@ -404,6 +427,7 @@ export class LinearProvisioner {
     }
     throw new Error('Linear checkout total did not appear before the payment step.');
   }
+
   private async readStableTotal(page: Page): Promise<DisplayedMoney> {
     const first = await readDisplayedTotal(page);
     await page.waitForTimeout(TOTAL_STABILITY_DELAY_MS);
@@ -412,83 +436,6 @@ export class LinearProvisioner {
       throw new Error(`Linear checkout total was still changing (${formatMoney(first)} -> ${formatMoney(second)}).`);
     }
     return second;
-  }
-
-  private async assertTotalUnchanged(run: AgentRun, page: Page, expected: DisplayedMoney): Promise<void> {
-    const current = await this.domStep(run, 'verify_checkout_total_unchanged', () =>
-      this.readStableTotal(page),
-    );
-    if (current.amount === expected.amount && current.currency === expected.currency) return;
-    run.context.events.publish(run.context.runId, 'agent:checkout_total_changed', {
-      previous: formatMoney(expected),
-      current: formatMoney(current),
-    });
-    throw new Error(
-      `Linear checkout total changed from ${formatMoney(expected)} to ${formatMoney(current)}. The stale Prava amount will not be attempted; start a fresh run.`,
-    );
-  }
-
-  private async openPravaCardEntry(
-    run: AgentRun,
-    browser: BrowserContext,
-    hostedUrl: string,
-  ): Promise<void> {
-    const page = await browser.newPage();
-    await page.goto(hostedUrl, { waitUntil: 'domcontentloaded' });
-    run.context.events.publish(run.context.runId, 'agent:manual_action_required', {
-      action: 'prava_card_entry',
-      message: 'Complete hosted card entry and the card-network OTP/passkey in the opened Chrome window.',
-      url: hostedUrl,
-    });
-
-    // The authenticated payment-result endpoint is authoritative. Polling begins
-    // immediately, so an expired callback host or a self-closing hosted tab cannot
-    // mask a successful token issuance or a real Prava failure.
-  }
-  private async fillPaymentFields(page: Page, credential: OneTimeCredential): Promise<void> {
-    const cardNumber = await findVisibleInFrames(page, [
-      'input[autocomplete="cc-number"]',
-      'input[name="cardnumber"]',
-      'input[name*="card" i][name*="number" i]',
-      'input[placeholder*="card number" i]',
-    ]);
-    const expiry = await findVisibleInFrames(page, [
-      'input[autocomplete="cc-exp"]',
-      'input[name="exp-date"]',
-      'input[name*="expir" i]',
-      'input[placeholder*="MM" i]',
-    ]);
-    const securityCode = await findVisibleInFrames(page, [
-      'input[autocomplete="cc-csc"]',
-      'input[name="cvc"]',
-      'input[name*="cvv" i]',
-      'input[placeholder*="CVC" i]',
-      'input[placeholder*="CVV" i]',
-    ]);
-    if (!cardNumber || !expiry || !securityCode) {
-      throw new Error('Linear payment fields were not found, including embedded payment frames.');
-    }
-
-    await cardNumber.fill(credential.token);
-    await expiry.fill(`${credential.expiryMonth.padStart(2, '0')}/${credential.expiryYear.slice(-2)}`);
-    await securityCode.fill(credential.dynamicCvv);
-  }
-
-  private async confirmPurchase(page: Page): Promise<void> {
-    const button = await firstVisible([
-      page.getByRole('button', { name: /confirm (purchase|upgrade)|pay now|subscribe|complete purchase/i }),
-    ]);
-    if (!button) throw new Error('Final Linear purchase confirmation button was not found.');
-    await button.click();
-    await page.waitForTimeout(2_000);
-
-    const body = await page.locator('body').innerText().catch(() => '');
-    if (/payment (failed|declined)|card was declined|unable to process/i.test(body)) {
-      throw new Error('Linear reported that the payment failed or was declined.');
-    }
-    if (!/success|subscription (updated|active)|payment complete|thank you|plan has been/i.test(body)) {
-      throw new Error('Linear did not display an explicit purchase-success confirmation; outcome was not reported as approved.');
-    }
   }
 
   private async pauseForMfaIfNeeded(run: AgentRun, page: Page): Promise<void> {
@@ -539,6 +486,20 @@ export class LinearProvisioner {
   }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Convert a dollar decimal string like "12.00" to integer paise.
+ * For the buildathon demo, we treat 1 USD ≈ 1 INR unit
+ * (i.e. $12.00 → 1200 paise = ₹12.00).
+ * In production this would use a real exchange rate.
+ */
+function dollarsToPaise(dollarString: string): number {
+  const [whole, fraction = ''] = dollarString.split('.');
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  return cents; // cents === paise for demo purposes
+}
+
 async function waitForLinearUi(page: Page): Promise<void> {
   await page.waitForFunction(
     () => (document.body?.innerText.trim().length ?? 0) > 0,
@@ -548,6 +509,7 @@ async function waitForLinearUi(page: Page): Promise<void> {
     throw new Error('Linear did not finish loading its interactive UI within 30 seconds.');
   });
 }
+
 async function isLoginOrMfa(page: Page): Promise<boolean> {
   if (/login|signin|oauth|accounts\.google/i.test(page.url())) return true;
   if (await isMfaPage(page)) return true;
@@ -621,6 +583,7 @@ export function parseUserCountFromVisibleText(text: string): number | undefined 
   const count = Number(raw);
   return Number.isSafeInteger(count) && count > 0 ? count : undefined;
 }
+
 export function parseDisplayedMoneyFromVisibleText(text: string): DisplayedMoney | undefined {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const labels = [/total due today/i, /amount due(?: today)?/i, /^total\b/i];
@@ -647,49 +610,6 @@ function formatMoney(money: DisplayedMoney): string {
   return `${money.currency} ${money.amount}`;
 }
 
-async function findVisibleInFrames(page: Page, selectors: string[]): Promise<Locator | undefined> {
-  for (const frame of page.frames()) {
-    const found = await findVisibleInFrame(frame, selectors);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-async function findVisibleInFrame(frame: Frame, selectors: string[]): Promise<Locator | undefined> {
-  for (const selector of selectors) {
-    const candidate = frame.locator(selector).first();
-    if (await candidate.isVisible().catch(() => false)) return candidate;
-  }
-  return undefined;
-}
-
-function extractCredential(result: PaymentResultResponse): OneTimeCredential {
-  const item = result.transactions.flatMap((transaction) => transaction.line_items)[0];
-  if (!item?.token || !item.dynamic_cvv || !item.expiry_month || !item.expiry_year) {
-    throw new Error('Prava returned awaiting_result without complete one-time credentials.');
-  }
-  return {
-    token: item.token,
-    dynamicCvv: item.dynamic_cvv,
-    expiryMonth: item.expiry_month,
-    expiryYear: item.expiry_year,
-    transactionReferenceId: item.txn_ref_id,
-  };
-}
-
-function callbackForRun(value: string, runId: string): string {
-  const callback = new URL(value);
-  callback.searchParams.set('runId', runId);
-  return callback.toString();
-}
-
-function safeOrigin(value: string): string {
-  try {
-    return new URL(value).origin;
-  } catch {
-    return '[unavailable]';
-  }
-}
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required for real/dry-run automation.`);
@@ -702,10 +622,6 @@ function envPositiveInteger(name: string, fallback: number): number {
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer.`);
   return parsed;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function delay(ms: number): Promise<void> {

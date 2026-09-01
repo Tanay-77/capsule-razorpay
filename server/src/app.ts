@@ -1,26 +1,31 @@
-﻿import cors from 'cors';
+import cors from 'cors';
 import express from 'express';
 import { agentRouter } from './routes/agent.js';
-import { createPravaRouter } from './routes/prava.js';
-import { PravaApiClient } from './prava/api-client.js';
+import { createRazorpayRouter } from './routes/razorpay.js';
 
 export function createApp() {
   const app = express();
   const webOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
-  const backendUrl = 'https://sandbox.api.prava.space';
-  const secretKey = process.env.PRAVA_SECRET_KEY ?? '';
-  const prava = new PravaApiClient(backendUrl, secretKey);
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET ?? '';
 
   app.disable('x-powered-by');
   app.use(cors({ origin: webOrigin, credentials: true }));
+
+  // The Razorpay webhook needs the raw body for HMAC verification.
+  // Mount it BEFORE the global JSON parser so express.raw() captures it.
+  app.use(
+    '/api/razorpay/webhook',
+    express.raw({ type: 'application/json', limit: '1mb' }),
+  );
+
+  // Global JSON parser for all other routes
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'capsule-server' });
   });
   app.use('/api/agent', agentRouter);
-  app.use('/api/prava', createPravaRouter(prava));
+  app.use('/api/razorpay', createRazorpayRouter(webhookSecret));
 
   return app;
 }
-
