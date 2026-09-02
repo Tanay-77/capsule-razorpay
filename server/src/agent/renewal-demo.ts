@@ -14,16 +14,16 @@ export function scheduleRenewalDemo(run: AgentRun, options: RenewalDemoOptions):
   run.renewalTimer = setTimeout(() => {
     if (!run.intent || run.state.current !== 'complete') return;
 
-    const periodEndedAt = new Date().toISOString();
-    const decisionDeadline = new Date(Date.now() + options.decisionWindowMs).toISOString();
+    const end = new Date();
+    const deadline = new Date(Date.now() + options.decisionWindowMs);
     run.state.transition('renewal_required');
     run.context.events.publish(run.context.runId, 'agent:renewal_required', {
-      periodEndedAt,
-      decisionDeadline,
-      seatCount: run.intent.seatCount,
-      billingCadence: run.intent.billingCadence,
-      billingPeriodDays: run.intent.billingPeriodDays,
-      prompt: 'Monthly billing cycle ending — approve the next monthly cycle?',
+      periodEndedAt: end.toISOString(),
+      decisionDeadline: deadline.toISOString(),
+      seatCount: run.intent.quantity,
+      billingCadence: 'monthly',
+      billingPeriodDays: 30,
+      prompt: `Your ${run.intent.quantity}x ${run.intent.skuId} subscription ends in 4 days. Approve renewal for ₹${run.intent.resolvedAmountPaise / 100}?`,
       freshApprovalRequired: true,
     });
 

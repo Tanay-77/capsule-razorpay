@@ -1,50 +1,44 @@
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import type { AgentExecutionContext } from './context.js';
-import {
-  IntentParserValidationError,
-  resolveLinearEstimate,
-} from './linear-pricing.js';
 import type { PurchaseIntent } from './types.js';
+import { CATALOG } from '../catalog/index.js';
 
 const MODEL = 'gemini-3.5-flash-lite';
 const MAX_ATTEMPTS = 2;
 
+export class IntentParserValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IntentParserValidationError';
+  }
+}
+
 const IntentExtractionSchema = z
   .object({
-    platform: z.string().min(1),
-    seatCount: z.number().int().positive().nullable().optional(),
-    durationDays: z.number().int().positive().nullable().optional(),
-    requestedTier: z.enum(['Free', 'Basic', 'Business', 'Enterprise']).nullable().optional(),
-    budgetCap: z
-      .string()
-      .regex(/^\d+(\.\d{1,2})?$/)
-      .nullable().optional(),
-    ambiguityReason: z.string().min(1).nullable().optional(),
-  })
-  .strict()
-  .transform(val => ({
-    platform: val.platform,
-    seatCount: val.seatCount ?? null,
-    durationDays: val.durationDays ?? null,
-    requestedTier: val.requestedTier ?? null,
-    budgetCap: val.budgetCap ?? null,
-    ambiguityReason: val.ambiguityReason ?? null,
-  }));
+    skuId: z.string().min(1).describe('The ID of the SKU to purchase from the catalog.'),
+    quantity: z.number().int().positive().describe('The number of units to purchase.'),
+    requestedDurationDays: z.number().int().positive().describe('REQUIRED. The duration requested in days. For monthly, assume 30 days. For one-time products, infer 1.'),
+    resolvedAmountPaise: z.number().int().positive().describe('REQUIRED. The exact total amount to charge in paise.'),
+    billingNote: z.string().describe('REQUIRED. An honest explanation of any constraints applied. Leave as an empty string "" if no constraints were violated.'),
+  });
 
 type IntentExtraction = z.infer<typeof IntentExtractionSchema>;
 
-const SYSTEM_PROMPT = `Extract a Linear subscription purchase request.
+const SYSTEM_PROMPT = `You are a strict, honest purchasing agent resolving user intents against the Capsule Store catalog.
 
-Return only a valid JSON object with the following fields. Do not calculate prices.
-- "platform": the named software platform (string).
-- "seatCount": explicit number of human seats, or null when absent.
-- "durationDays": explicit duration normalized to days (1 week = 7 days, 1 month = 30 days), or null when absent.
-- "requestedTier": an explicitly named Linear tier ("Free", "Basic", "Business", "Enterprise"). If no tier is named, return null. Do not infer a tier from a budget.
-- "budgetCap": an explicitly stated USD cap as a decimal string without a currency symbol, or null.
-- "ambiguityReason": explain any missing seat count, duration, or unclear request; otherwise null.
+Return only a valid JSON object matching the requested schema.
 
-Never turn a budget cap into a purchase amount. Never invent missing quantities.`;
+CATALOG GROUND TRUTH:
+${JSON.stringify(CATALOG, null, 2)}
+
+INSTRUCTIONS:
+1. Identify the SKU that best matches the request. Map the catalog's "id" field to the output's "skuId" field.
+2. Determine the requested quantity. If it violates a 'min_quantity' constraint, adjust the quantity to the minimum required and note this in the billingNote. Ensure this is output in the "quantity" field.
+3. Determine the EXACT requested duration in days and output it in "requestedDurationDays" (e.g. 10). Do not alter this even if it violates constraints.
+4. Calculate the exact resolvedAmountPaise. If the requested duration violates a 'monthly_only' or 'no_proration' constraint, you MUST charge them for the full billing cycle (e.g. 30 days) by multiplying the price by the adjusted quantity. Output this in "resolvedAmountPaise" and explain the constraint in "billingNote".
+5. You MUST include all 5 fields exactly as named in the schema. If billingNote is not needed, set it to "".
+6. If the request is ambiguous (e.g. "get me some seats" without specifying a tier), you must fail validation by returning an empty JSON object {} so the system knows to prompt the user.`;
 
 export interface IntentParserOptions {
   client?: GoogleGenAI;
@@ -86,18 +80,22 @@ export class IntentParser {
           model: this.model,
           status: 'succeeded',
         });
-        const intent = resolveLinearEstimate(extraction);
+        
+        const intent: PurchaseIntent = {
+          skuId: extraction.skuId,
+          quantity: extraction.quantity,
+          requestedDurationDays: extraction.requestedDurationDays,
+          resolvedAmountPaise: extraction.resolvedAmountPaise,
+          billingNote: extraction.billingNote,
+        };
+
         context.events.publish(context.runId, 'agent:intent_parsed', {
           intent: 'purchase',
-          platform: intent.platform,
-          seatCount: intent.seatCount,
+          skuId: intent.skuId,
+          quantity: intent.quantity,
           requestedDurationDays: intent.requestedDurationDays,
-          billingCadence: intent.billingCadence,
-          billingPeriodDays: intent.billingPeriodDays,
-          billablePeriodCount: intent.billablePeriodCount,
-          pricingNotice: intent.pricingNotice,
-          exactAmount: intent.exactAmount,
-          tierName: intent.tierName,
+          resolvedAmountPaise: intent.resolvedAmountPaise,
+          billingNote: intent.billingNote,
         });
         return intent;
       } catch (error) {

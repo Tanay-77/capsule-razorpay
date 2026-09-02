@@ -6,15 +6,11 @@ import { scheduleRenewalDemo } from '../src/agent/renewal-demo.js';
 test('silence at renewal creates no order, payment link, or charge attempt', async () => {
   const run = createAgentRun();
   run.intent = {
-    platform: 'Linear',
-    seatCount: 1,
-    requestedDurationDays: 10,
-    billingCadence: 'monthly',
-    billingPeriodDays: 30,
-    billablePeriodCount: 1,
-    pricingNotice: 'Linear has a one-month minimum. This 10-day sprint requires one monthly billing cycle, estimated at $12.00 before tax and fees.',
-    exactAmount: '12.00',
-    tierName: 'Basic',
+    skuId: 'sku_pro_seat',
+    quantity: 5,
+    requestedDurationDays: 30,
+    resolvedAmountPaise: 600000,
+    billingNote: '',
   };
 
   run.state.transition('intent_parsed');

@@ -4,15 +4,11 @@ import { randomUUID } from 'node:crypto';
 export interface AgentEventPayloads {
   'agent:intent_parsed': {
     intent: 'purchase';
-    platform: 'Linear';
-    seatCount: number;
+    skuId: string;
+    quantity: number;
     requestedDurationDays: number;
-    billingCadence: 'monthly';
-    billingPeriodDays: 30;
-    billablePeriodCount: 1;
-    pricingNotice: string;
-    exactAmount: string;
-    tierName: 'Free' | 'Basic' | 'Business';
+    resolvedAmountPaise: number;
+    billingNote: string;
   };
   'agent:intent_parse_attempt': {
     attempt: number;

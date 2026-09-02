@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { agentEvents, type AgentEvent } from '../events/AgentEventEmitter.js';
 import { createAgentRun, getAgentRun, type AgentRun } from '../agent/runs.js';
 import { parseIntent } from '../agent/intent-parser.js';
-import { IntentParserValidationError } from '../agent/linear-pricing.js';
+import { IntentParserValidationError } from '../agent/intent-parser.js';
 import { LinearProvisioner } from '../agent/linear-provisioner.js';
 import { clearRenewalTimers, scheduleRenewalDemo } from '../agent/renewal-demo.js';
 import type { AutomationMode } from '../agent/types.js';
@@ -122,20 +122,15 @@ agentRouter.post('/renewal/approve', (req, res) => {
   const renewalRun = createAgentRun();
   renewalRun.intent = {
     ...originalRun.intent,
-    requestedDurationDays: originalRun.intent.billingPeriodDays,
-    pricingNotice: `Renewal is for one additional monthly billing cycle, estimated at $${originalRun.intent.exactAmount} before tax and fees.`,
+    billingNote: `Renewal is for an additional cycle, estimated at ₹${originalRun.intent.resolvedAmountPaise / 100}.`,
   };
   renewalRun.context.events.publish(renewalRun.context.runId, 'agent:intent_parsed', {
     intent: 'purchase',
-    platform: renewalRun.intent.platform,
-    seatCount: renewalRun.intent.seatCount,
+    skuId: renewalRun.intent.skuId,
+    quantity: renewalRun.intent.quantity,
     requestedDurationDays: renewalRun.intent.requestedDurationDays,
-    billingCadence: renewalRun.intent.billingCadence,
-    billingPeriodDays: renewalRun.intent.billingPeriodDays,
-    billablePeriodCount: renewalRun.intent.billablePeriodCount,
-    pricingNotice: renewalRun.intent.pricingNotice,
-    exactAmount: renewalRun.intent.exactAmount,
-    tierName: renewalRun.intent.tierName,
+    resolvedAmountPaise: renewalRun.intent.resolvedAmountPaise,
+    billingNote: renewalRun.intent.billingNote,
   });
   renewalRun.state.transition('intent_parsed');
 

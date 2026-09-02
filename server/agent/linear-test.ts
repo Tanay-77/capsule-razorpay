@@ -10,15 +10,11 @@ if (tier !== 'Free' && tier !== 'Basic' && tier !== 'Business') {
 }
 
 const intent: PurchaseIntent = {
-  platform: 'Linear',
-  seatCount: positiveInteger('LINEAR_TEST_SEAT_COUNT', 1),
+  skuId: 'sku_pro_seat',
+  quantity: positiveInteger('LINEAR_TEST_SEAT_COUNT', 1),
   requestedDurationDays: positiveInteger('LINEAR_TEST_DURATION_DAYS', 30),
-  billingCadence: 'monthly',
-  billingPeriodDays: 30,
-  billablePeriodCount: 1,
-  pricingNotice: 'Linear bills monthly; the actual checkout total remains authoritative.',
-  exactAmount: process.env.LINEAR_TEST_ESTIMATED_AMOUNT ?? '12.00',
-  tierName: tier,
+  resolvedAmountPaise: 1200,
+  billingNote: '',
 };
 
 const run = createAgentRun();

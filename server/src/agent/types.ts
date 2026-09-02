@@ -1,18 +1,9 @@
 export type PurchaseIntent = {
-  platform: 'Linear';
-  seatCount: number;
-  /** The user's requested sprint length. This is never rewritten to match billing. */
+  skuId: string;
+  quantity: number;
   requestedDurationDays: number;
-  billingCadence: 'monthly';
-  /** A display/demo approximation for one monthly merchant billing cycle. */
-  billingPeriodDays: 30;
-  /** Capsule purchases only the first cycle; every later cycle needs fresh approval. */
-  billablePeriodCount: 1;
-  /** Human-readable disclosure when requested duration and billing granularity differ. */
-  pricingNotice: string;
-  /** Provisional first-cycle estimate. Converted to paise at the Razorpay API boundary. */
-  exactAmount: string;
-  tierName: 'Free' | 'Basic' | 'Business';
+  resolvedAmountPaise: number;
+  billingNote: string;
 };
 
 export type AgentState =

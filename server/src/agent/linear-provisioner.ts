@@ -87,8 +87,8 @@ export class LinearProvisioner {
   }
 
   private async runMock(run: AgentRun, intent: PurchaseIntent): Promise<ProvisioningResult> {
-    const amount = intent.exactAmount;
-    const amountPaise = dollarsToPaise(amount);
+    const amount = (intent.resolvedAmountPaise / 100).toFixed(2);
+    const amountPaise = intent.resolvedAmountPaise;
     run.state.transition('quoting_checkout');
     await this.mockStep(run, 'open_linear_billing');
     await this.mockStep(run, 'configure_seats_and_tier');
@@ -210,9 +210,9 @@ export class LinearProvisioner {
         receipt: `capsule_${run.context.runId.slice(0, 16)}`,
         notes: {
           capsule_run_id: run.context.runId,
-          platform: 'Linear',
-          seats: String(intent.seatCount),
-          tier: intent.tierName,
+          platform: 'Capsule Store',
+          seats: String(intent.quantity),
+          tier: intent.skuId,
         },
       });
       run.orderId = order.id;
@@ -253,7 +253,7 @@ export class LinearProvisioner {
         currency: quoted.currency === 'USD' ? 'INR' : quoted.currency,
         expire_by: expireBy,
         reference_id: run.context.runId,
-        description: `${intent.seatCount} Linear ${intent.tierName} seat${intent.seatCount === 1 ? '' : 's'} – Capsule`,
+        description: `${intent.quantity}x ${intent.skuId} – Capsule`,
         callback_url: `${process.env.WEB_ORIGIN ?? 'http://localhost:3000'}/payment/complete?runId=${run.context.runId}`,
         callback_method: 'get',
         notes: {
@@ -354,13 +354,13 @@ export class LinearProvisioner {
 
   private async configureCheckout(run: AgentRun, page: Page, intent: PurchaseIntent): Promise<void> {
     await this.pauseForMfaIfNeeded(run, page);
-    if (intent.tierName === 'Free') {
+    if (intent.skuId === 'Free') {
       throw new Error('Linear Free has no payable checkout; a Razorpay Order must not be created for it.');
     }
     const billingText = await page.locator('body').innerText();
     const billingUserCount = parseUserCountFromVisibleText(billingText);
 
-    if (intent.tierName === 'Basic') {
+    if (intent.skuId === 'sku_basic_seat') {
       await this.withUiRetry(page, 'open Basic checkout', async () => {
         await clickFirstVisible(page, [
           page.getByRole('button', { name: /upgrade now|upgrade to basic/i }),
@@ -398,7 +398,7 @@ export class LinearProvisioner {
         page.locator('input[name*="seat" i], input[name*="quantity" i]'),
       ]);
       if (seats) {
-        await seats.fill(String(intent.seatCount));
+        await seats.fill(String(intent.quantity));
         await seats.blur();
         return;
       }
@@ -408,9 +408,9 @@ export class LinearProvisioner {
       if (currentUsers === undefined) {
         throw new Error('Linear exposes no seat input and its current workspace user count could not be read.');
       }
-      if (currentUsers !== intent.seatCount) {
+      if (currentUsers !== intent.quantity) {
         throw new Error(
-          `Linear checkout uses the workspace user count (${currentUsers}), but the intent requests ${intent.seatCount}. Adjust workspace members before checkout.`,
+          `Linear checkout uses the workspace user count (${currentUsers}), but the intent requests ${intent.quantity}. Adjust workspace members before checkout.`,
         );
       }
     });

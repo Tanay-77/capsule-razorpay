@@ -31,15 +31,11 @@ test('mock mode emits the real event path without browser or Razorpay calls', as
     run.state.transition('intent_parsed');
     const provisioner = new LinearProvisioner();
     const result = await provisioner.provision(run, {
-      platform: 'Linear',
-      seatCount: 3,
-      requestedDurationDays: 10,
-      billingCadence: 'monthly',
-      billingPeriodDays: 30,
-      billablePeriodCount: 1,
-      pricingNotice: 'Linear has a one-month minimum. This 10-day sprint requires one monthly billing cycle, estimated at $12.00 before tax and fees.',
-      exactAmount: '12.00',
-      tierName: 'Basic',
+      skuId: 'sku_pro_seat',
+      quantity: 5,
+      requestedDurationDays: 30,
+      resolvedAmountPaise: 600000,
+      billingNote: '',
     }, 'real');
 
     assert.equal(result.mode, 'mock');
