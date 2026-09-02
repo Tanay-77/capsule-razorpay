@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { createAgentRun } from '../src/agent/runs.js';
-import { LinearProvisioner } from '../src/agent/linear-provisioner.js';
+import { StoreProvisioner } from '../src/agent/store-provisioner.js';
 import type { AutomationMode, PurchaseIntent } from '../src/agent/types.js';
 
 const requestedMode: AutomationMode = process.argv.includes('--real') ? 'real' : 'dry-run';
@@ -27,7 +27,7 @@ const unsubscribe = run.context.events.subscribe((event) => {
 try {
   run.intent = intent;
   run.state.transition('intent_parsed');
-  const result = await new LinearProvisioner().provision(run, intent, requestedMode);
+  const result = await new StoreProvisioner().provision(run, intent, requestedMode);
   process.stdout.write(`${JSON.stringify({ runId: run.context.runId, result })}\n`);
 } finally {
   unsubscribe();

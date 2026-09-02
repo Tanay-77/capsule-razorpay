@@ -21,6 +21,8 @@ export interface AgentRun {
   /** Resolves when the webhook confirms payment for this run. */
   webhookPromise?: Promise<void>;
   webhookResolve?: () => void;
+  webhookReject?: (reason?: any) => void;
+  approvalResolve?: () => void;
 }
 
 const runs = new Map<string, AgentRun>();

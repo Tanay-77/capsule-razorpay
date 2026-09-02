@@ -15,6 +15,10 @@ export interface AgentEventPayloads {
     model: string;
     status: 'started' | 'succeeded' | 'validation_failed' | 'failed';
   };
+  'agent:passkey_registered': {
+    credentialId: string;
+  };
+  'agent:passkey_approved': Record<string, never>;
   'agent:state_changed': { from: string; to: string };
   'agent:razorpay_request': {
     operation: 'create_order' | 'create_payment_link';
@@ -57,7 +61,7 @@ export interface AgentEventPayloads {
   'agent:checkout_total_read': {
     amount: string;
     currency: string;
-    source: 'linear_dom' | 'mock';
+    source: 'mock' | 'linear_dom' | 'catalog';
   };
   'agent:checkout_total_changed': { previous: string; current: string };
   'agent:screenshot_saved': { path: string };
@@ -90,6 +94,7 @@ export interface AgentEventPayloads {
     reusableCredentialStored: false;
   };
   'agent:complete': { outcome: string };
+  'agent:payment_mismatch': { expectedPaise: number; actualPaise: number };
   'agent:error': { phase: string; message: string; retryable: boolean };
 }
 

@@ -16,7 +16,7 @@ Capsule explains that Linear has a monthly billing minimum, reads the real check
 - Honest handling of merchant billing constraints
 - Real amount and currency read from Linear checkout
 - Exact-amount Razorpay Order (no overpayment possible)
-- Human passkey approval (Capsule's own WebAuthn gate, not a Razorpay feature)
+- Human passkey approval (Capsule acts as its own WebAuthn relying party; it registers a passkey on first use and authenticates on subsequent uses)
 - Payment Link with tight expiry (no stale payments)
 - Webhook confirmation with amount recheck before marking complete
 - Live agent logs through Server-Sent Events (SSE)
@@ -162,7 +162,7 @@ For a short demo, use 8 seconds for the billing-cycle timer and 8 seconds for th
 ## Current limitations
 
 - Linear automation can require updates when its UI changes.
-- Runs, SSE history, and demo timers are stored in memory.
+- Runs, SSE history, demo timers, and the registered WebAuthn passkey are stored in memory. A server restart wipes the passkey, meaning the next approval will behave as a first-time registration rather than an authentication. This is an intentional demo simplification; production would persist per-user credentials to a database.
 - Automatic "cancel at end of billing period" is not implemented yet.
 - Production would require authentication, a database, durable jobs, and audit logs.
 

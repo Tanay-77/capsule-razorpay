@@ -6,6 +6,7 @@ import {
   type AgentEvent,
   type AgentEventType,
 } from '@/lib/agent-events';
+import { startRegistration, startAuthentication } from '@simplewebauthn/browser';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -136,11 +137,7 @@ export function AgentEventStream({
       </div>
 
       {approvalPending ? (
-        <div className="border-t-4 border-ink bg-signal px-5 py-5 text-ink" role="status">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em]">Passkey / human checkpoint</p>
-          <p className="mt-2 text-xl font-black uppercase leading-tight sm:text-2xl">Open the Razorpay Payment Link to pay</p>
-          <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/65">Capsule is paused. No checkout continues without you.</p>
-        </div>
+        <PasskeyApprovalPanel runId={runId!} />
       ) : null}
 
       {renewalMoment ? (
@@ -191,7 +188,13 @@ function EventLine({ event, index }: { event: AgentEvent; index: number }) {
         </p>
         {view.detail ? (
           <p className="mt-2 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.08em] opacity-55">
-            {view.detail}
+            {view.detail.startsWith('http') ? (
+              <a href={view.detail} target="_blank" rel="noopener noreferrer" className="underline hover:text-ink">
+                {view.detail}
+              </a>
+            ) : (
+              view.detail
+            )}
           </p>
         ) : null}
       </div>
@@ -260,6 +263,84 @@ function RenewalMomentPanel({
   );
 }
 
+function PasskeyApprovalPanel({ runId }: { runId: string }) {
+  const [approving, setApproving] = useState(false);
+  const [error, setError] = useState<string>();
+
+  async function handleApprove() {
+    if (!runId || approving) return;
+    setApproving(true);
+    setError(undefined);
+    try {
+      let wasRegistration = false;
+      let credentialId = '';
+      
+      const statusRes = await fetch(`${API_URL}/api/webauthn/status`);
+      const { isRegistered } = await statusRes.json();
+      
+      if (!isRegistered) {
+        const optsRes = await fetch(`${API_URL}/api/webauthn/generate-registration-options`, { method: 'POST' });
+        if (!optsRes.ok) throw new Error('Failed to fetch registration options');
+        const opts = await optsRes.json();
+        const attResp = await startRegistration({ optionsJSON: opts });
+        const verifyRes = await fetch(`${API_URL}/api/webauthn/verify-registration`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(attResp),
+        });
+        const verifyJson = await verifyRes.json();
+        if (!verifyJson.verified) throw new Error('Registration failed');
+        wasRegistration = true;
+        credentialId = verifyJson.credentialId;
+      } else {
+        const optsRes = await fetch(`${API_URL}/api/webauthn/generate-authentication-options`, { method: 'POST' });
+        if (!optsRes.ok) throw new Error('Failed to fetch authentication options');
+        const opts = await optsRes.json();
+        const asseResp = await startAuthentication({ optionsJSON: opts });
+        const verifyRes = await fetch(`${API_URL}/api/webauthn/verify-authentication`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(asseResp),
+        });
+        const verifyJson = await verifyRes.json();
+        if (!verifyJson.verified) throw new Error('Authentication failed');
+      }
+      
+      const approveRes = await fetch(`${API_URL}/api/agent/${runId}/approve`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wasRegistration, credentialId }),
+      });
+      if (!approveRes.ok) throw new Error('Agent approval failed');
+    } catch (e) {
+      console.error(e);
+      setError((e as Error).message);
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  return (
+    <div className="border-t-4 border-ink bg-signal px-5 py-5 text-ink" role="status">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em]">Passkey / human checkpoint</p>
+      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xl font-black uppercase leading-tight sm:text-2xl">Approve checkout</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/65">Capsule is paused. No checkout continues without you.</p>
+        </div>
+        <button
+          className="border-4 border-ink bg-paper px-6 py-4 text-sm font-black uppercase tracking-[0.12em] hover:bg-ink hover:text-paper disabled:opacity-50"
+          onClick={() => void handleApprove()}
+          disabled={approving}
+        >
+          {approving ? 'Authenticating...' : 'Approve with passkey →'}
+        </button>
+      </div>
+      {error && <p className="mt-4 text-sm font-bold text-red-700">{error}</p>}
+    </div>
+  );
+}
+
 function ProofFact({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
   return (
     <div className={`min-h-28 px-4 py-4 ${last ? '' : 'border-b-2 border-ink sm:border-r-2 lg:border-b-0'}`}>
@@ -289,9 +370,9 @@ function deriveSessionStatus(events: AgentEvent[]): SessionStatus {
   for (const event of events) {
     const payload = event.payload;
     if (event.type === 'agent:intent_parsed') {
-      status.merchant = readString(payload.platform, 'LINEAR').toUpperCase();
-      status.amount = readString(payload.exactAmount, '--');
-      status.currency = 'USD';
+      status.merchant = 'CAPSULE STORE';
+      status.amount = typeof payload.resolvedAmountPaise === 'number' ? (payload.resolvedAmountPaise / 100).toFixed(2) : '--';
+      status.currency = 'INR';
       status.amountSource = 'ESTIMATE';
     }
     if (event.type === 'agent:checkout_total_read') {
@@ -312,8 +393,8 @@ function presentEvent(event: AgentEvent): EventPresentation {
     case 'agent:intent_parsed':
       return {
         label: 'Billing constraint surfaced',
-        message: readString(payload.pricingNotice, 'Linear bills in monthly cycles.'),
-        detail: `Original request · ${readNumber(payload.requestedDurationDays)} days · ${formatAmount(readString(payload.exactAmount), 'USD')} first-cycle preview`,
+        message: readString(payload.billingNote, 'Store constraint applies.'),
+        detail: `Original request · ${readNumber(payload.requestedDurationDays)} days · ₹${readNumber(payload.resolvedAmountPaise) / 100} exact total`,
         tone: 'accent',
       };
     case 'agent:order_created':

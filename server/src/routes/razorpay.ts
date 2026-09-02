@@ -61,10 +61,9 @@ export function createRazorpayRouter(webhookSecret: string): Router {
 
       // Recheck: paid amount must match the original order amount
       if (order.amount_paid !== order.amount) {
-        run.context.events.publish(run.context.runId, 'agent:error', {
-          phase: 'razorpay:webhook_amount_check',
-          message: `Amount mismatch: order.amount=${order.amount}, order.amount_paid=${order.amount_paid}`,
-          retryable: false,
+        run.context.events.publish(run.context.runId, 'agent:payment_mismatch', {
+          expectedPaise: order.amount,
+          actualPaise: order.amount_paid,
         });
         return res.json({ status: 'ok', processed: false, reason: 'amount mismatch' });
       }

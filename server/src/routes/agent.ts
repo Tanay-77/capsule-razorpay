@@ -3,12 +3,11 @@ import { agentEvents, type AgentEvent } from '../events/AgentEventEmitter.js';
 import { createAgentRun, getAgentRun, type AgentRun } from '../agent/runs.js';
 import { parseIntent } from '../agent/intent-parser.js';
 import { IntentParserValidationError } from '../agent/intent-parser.js';
-import { LinearProvisioner } from '../agent/linear-provisioner.js';
+import { StoreProvisioner } from '../agent/store-provisioner.js';
 import { clearRenewalTimers, scheduleRenewalDemo } from '../agent/renewal-demo.js';
 import type { AutomationMode } from '../agent/types.js';
 
 export const agentRouter = Router();
-const linearProvisioner = new LinearProvisioner();
 const DEFAULT_RENEWAL_DEMO_SECONDS = 90;
 const DEFAULT_RENEWAL_DECISION_SECONDS = 12;
 
@@ -164,17 +163,18 @@ function configureRun(run: AgentRun, mode: AutomationMode, demoMs: number, decis
   run.renewalDecisionMs = decisionMs;
 }
 
-function startProvisioning(run: AgentRun, mode: AutomationMode): void {
-  if (!run.intent) return;
-  void linearProvisioner.provision(run, run.intent, mode).then((result) => {
+async function startProvisioning(run: AgentRun, mode: AutomationMode) {
+  try {
+    const provisioner = new StoreProvisioner();
+    const result = await provisioner.provision(run, run.intent!, mode);
     if (result.mode === 'dry-run' || run.state.current !== 'complete') return;
     scheduleRenewalDemo(run, {
       delayMs: run.renewalDemoMs ?? DEFAULT_RENEWAL_DEMO_SECONDS * 1_000,
       decisionWindowMs: run.renewalDecisionMs ?? DEFAULT_RENEWAL_DECISION_SECONDS * 1_000,
     });
-  }).catch(() => {
+  } catch (error) {
     // The provisioner publishes its typed failure event; never duplicate it with console logging.
-  });
+  }
 }
 
 function parseAutomationMode(value: unknown): AutomationMode | undefined {
@@ -193,3 +193,28 @@ function parseBoundedInteger(
   if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) return undefined;
   return parsed;
 }
+
+agentRouter.post('/:runId/approve', (req, res) => {
+  const { runId } = req.params;
+  const { wasRegistration, credentialId } = req.body;
+  const run = getAgentRun(runId);
+  if (!run) {
+    return res.status(404).json({ error: 'Run not found' });
+  }
+
+  // The provisioner is blocking on this resolve function
+  if (run.approvalResolve) {
+    if (wasRegistration && credentialId) {
+      run.context.events.publish(run.context.runId, 'agent:passkey_registered', {
+        credentialId,
+      });
+    }
+    
+    run.context.events.publish(run.context.runId, 'agent:passkey_approved', {} as any);
+    run.approvalResolve();
+    run.approvalResolve = undefined;
+    return res.json({ success: true });
+  }
+
+  return res.status(400).json({ error: 'Run is not awaiting approval' });
+});
