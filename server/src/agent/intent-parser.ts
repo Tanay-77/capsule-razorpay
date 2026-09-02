@@ -7,7 +7,7 @@ import {
 } from './linear-pricing.js';
 import type { PurchaseIntent } from './types.js';
 
-const MODEL = 'gemini-2.5-pro';
+const MODEL = 'gemini-3.5-flash-lite';
 const MAX_ATTEMPTS = 2;
 
 const IntentExtractionSchema = z

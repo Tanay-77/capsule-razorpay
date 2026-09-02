@@ -10,7 +10,7 @@ const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const DEFAULT_BILLING_URL = 'https://linear.app/settings/billing';
 const DEFAULT_MANUAL_TIMEOUT_MS = 10 * 60 * 1_000;
 const TOTAL_STABILITY_DELAY_MS = 1_250;
-const PAYMENT_LINK_EXPIRY_SECONDS = 15 * 60; // 15 minutes
+const PAYMENT_LINK_EXPIRY_SECONDS = 20 * 60; // 20 minutes (Razorpay requires at least 15m)
 
 export interface DisplayedMoney {
   amount: string;
