@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { agentRouter } from './routes/agent.js';
 import { createRazorpayRouter } from './routes/razorpay.js';
+import { catalogRouter } from './routes/catalog.js';
 
 export function createApp() {
   const app = express();
@@ -26,6 +27,7 @@ export function createApp() {
   });
   app.use('/api/agent', agentRouter);
   app.use('/api/razorpay', createRazorpayRouter(webhookSecret));
+  app.use('/api/catalog', catalogRouter);
 
   return app;
 }
