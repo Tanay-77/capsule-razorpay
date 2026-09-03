@@ -17,13 +17,16 @@ export function scheduleRenewalDemo(run: AgentRun, options: RenewalDemoOptions):
     const end = new Date();
     const deadline = new Date(Date.now() + options.decisionWindowMs);
     run.state.transition('renewal_required');
+    run.campaign = 'renewal-incentive-10pct';
+    const seconds = Math.floor(options.decisionWindowMs / 1000);
+
     run.context.events.publish(run.context.runId, 'agent:renewal_required', {
       periodEndedAt: end.toISOString(),
       decisionDeadline: deadline.toISOString(),
       seatCount: run.intent.quantity,
       billingCadence: 'monthly',
       billingPeriodDays: 30,
-      prompt: `Your ${run.intent.quantity}x ${run.intent.skuId} subscription ends in 4 days. Approve renewal for ₹${run.intent.resolvedAmountPaise / 100}?`,
+      prompt: `Cycle ending — renew now and save 10% — offer expires in ${seconds} seconds`,
       freshApprovalRequired: true,
     });
 

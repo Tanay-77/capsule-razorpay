@@ -119,9 +119,20 @@ agentRouter.post('/renewal/approve', (req, res) => {
   originalRun.state.transition('renewal_approved');
 
   const renewalRun = createAgentRun();
+  
+  let newAmountPaise = originalRun.intent.resolvedAmountPaise;
+  let newBillingNote = `Renewal is for an additional cycle, estimated at ₹${originalRun.intent.resolvedAmountPaise / 100}.`;
+  
+  if (originalRun.campaign === 'renewal-incentive-10pct') {
+    newAmountPaise = Math.floor(originalRun.intent.resolvedAmountPaise * 0.9);
+    newBillingNote = `Renewal is for an additional cycle. Campaign 'renewal-incentive-10pct' applied (10% discount).`;
+    renewalRun.campaign = originalRun.campaign;
+  }
+
   renewalRun.intent = {
     ...originalRun.intent,
-    billingNote: `Renewal is for an additional cycle, estimated at ₹${originalRun.intent.resolvedAmountPaise / 100}.`,
+    resolvedAmountPaise: newAmountPaise,
+    billingNote: newBillingNote,
   };
   renewalRun.context.events.publish(renewalRun.context.runId, 'agent:intent_parsed', {
     intent: 'purchase',

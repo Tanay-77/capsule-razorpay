@@ -123,7 +123,6 @@ export class StoreProvisioner {
     });
     run.state.transition('checkout_quoted');
     
-    // 1. Create Razorpay Order
     const order = await razorpay.createOrder(run.context, {
       amount: amountPaise,
       currency: 'INR',
@@ -132,6 +131,7 @@ export class StoreProvisioner {
         merchant: 'capsule-demo-store',
         skuId: intent.skuId,
         quantity: String(intent.quantity),
+        ...(run.campaign ? { campaign: run.campaign } : {}),
       },
     });
     run.orderId = order.id;
