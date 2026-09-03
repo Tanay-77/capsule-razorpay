@@ -47,6 +47,36 @@ export interface AgentEventPayloads {
     paymentId: string;
     amountPaidPaise: number;
   };
+  'agent:upsell_suggested': {
+    primarySkuId: string;
+    addOnSkuId: string;
+    addOnName: string;
+    priceInPaise: number;
+  };
+  'agent:upsell_accepted': Record<string, never>;
+  'agent:upsell_declined': Record<string, never>;
+  'agent:upsell_order_created': {
+    orderId: string;
+    amountPaise: number;
+    currency: string;
+  };
+  'agent:upsell_passkey_required': {
+    orderId: string;
+    message: string;
+  };
+  'agent:upsell_payment_link_created': {
+    paymentLinkId: string;
+    shortUrl: string;
+    expireBy: number;
+  };
+  'agent:upsell_awaiting_payment': {
+    paymentLinkUrl: string;
+  };
+  'agent:upsell_webhook_confirmed': {
+    orderId: string;
+    paymentId: string;
+    amountPaidPaise: number;
+  };
   'agent:dom_step': {
     step: string;
     status: 'started' | 'completed' | 'failed';

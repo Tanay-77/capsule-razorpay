@@ -14,6 +14,9 @@ export function createApp() {
   }
 
   app.use(cors({ origin: 'http://localhost:3000' }));
+  // Raw body for Razorpay webhook — must come BEFORE express.json()
+  // so the original bytes are preserved for HMAC signature verification.
+  app.use('/api/razorpay/webhook', express.raw({ type: 'application/json' }));
   app.use(express.json());
 
   app.get('/api/health', (req, res) => {

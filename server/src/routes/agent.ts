@@ -218,3 +218,116 @@ agentRouter.post('/:runId/approve', (req, res) => {
 
   return res.status(400).json({ error: 'Run is not awaiting approval' });
 });
+
+agentRouter.post('/:runId/upsell_decision', (req, res) => {
+  const { runId } = req.params;
+  const { accepted } = req.body;
+  const run = getAgentRun(runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+
+  if (run.upsellDecisionResolve) {
+    run.upsellDecisionResolve(Boolean(accepted));
+    run.upsellDecisionResolve = undefined;
+    return res.json({ success: true });
+  }
+
+  return res.status(400).json({ error: 'Run is not awaiting an upsell decision' });
+});
+
+agentRouter.post('/:runId/approve_upsell', (req, res) => {
+  const { runId } = req.params;
+  const { wasRegistration, credentialId } = req.body;
+  const run = getAgentRun(runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+
+  if (run.upsellApprovalResolve) {
+    if (wasRegistration && credentialId) {
+      run.context.events.publish(run.context.runId, 'agent:passkey_registered', {
+        credentialId,
+      });
+    }
+    
+    run.context.events.publish(run.context.runId, 'agent:passkey_approved', {} as any);
+    run.upsellApprovalResolve();
+    run.upsellApprovalResolve = undefined;
+    return res.json({ success: true });
+  }
+
+  return res.status(400).json({ error: 'Run is not awaiting upsell passkey approval' });
+});
+
+/**
+ * Fallback payment confirmation — called by the payment-complete page
+ * when the Razorpay redirect arrives. Fetches the PAYMENT LINK status
+ * directly from the Razorpay API and resolves the webhook promise if paid.
+ *
+ * We check the Payment Link (not the Order) because Payment Links create
+ * their own internal order — the Order we created with createOrder is
+ * never actually paid through.
+ */
+agentRouter.post('/:runId/confirm_payment', async (req, res) => {
+  const { runId } = req.params;
+  const run = getAgentRun(runId);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (!run.paymentLinkId) return res.status(400).json({ error: 'No payment link associated with this run' });
+
+  // Only act if we're actually waiting for payment
+  if (run.state.current !== 'awaiting_payment' && run.state.current !== 'upsell_awaiting_payment') {
+    return res.json({ status: 'ok', processed: false, reason: `State is ${run.state.current}, not awaiting payment` });
+  }
+
+  try {
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+    if (!keyId || !keySecret) throw new Error('Razorpay credentials missing');
+
+    const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`;
+
+    // Fetch the Payment Link status
+    const plResp = await fetch(`https://api.razorpay.com/v1/payment_links/${run.paymentLinkId}`, {
+      headers: { Authorization: authHeader },
+    });
+
+    if (!plResp.ok) throw new Error(`Razorpay API returned ${plResp.status}`);
+    const pl = (await plResp.json()) as { id: string; status: string; amount: number; amount_paid: number; payments?: Array<{ payment_id: string; status: string }> };
+
+    console.log(`[CONFIRM_PAYMENT] Payment Link ${pl.id} status=${pl.status} amount_paid=${pl.amount_paid}`);
+
+    if (pl.status !== 'paid') {
+      return res.json({ status: 'ok', processed: false, reason: `Payment Link status is '${pl.status}', not 'paid'` });
+    }
+
+    // Extract payment ID from the redirect params or payment link data
+    const paymentId = req.body?.razorpay_payment_id ?? pl.payments?.[0]?.payment_id ?? 'unknown';
+
+    if (run.state.current === 'awaiting_payment') {
+      run.state.transition('webhook_confirmed');
+      run.context.events.publish(run.context.runId, 'agent:webhook_confirmed', {
+        orderId: run.orderId ?? pl.id,
+        paymentId,
+        amountPaidPaise: pl.amount_paid,
+      });
+      run.webhookResolve?.();
+      console.log(`[CONFIRM_PAYMENT] Resolved primary payment for run: ${run.context.runId}`);
+    } else if (run.state.current === 'upsell_awaiting_payment') {
+      run.state.transition('upsell_webhook_confirmed');
+      run.state.transition('complete');
+      run.context.events.publish(run.context.runId, 'agent:upsell_webhook_confirmed', {
+        orderId: run.orderId ?? pl.id,
+        paymentId,
+        amountPaidPaise: pl.amount_paid,
+      });
+      run.context.events.publish(run.context.runId, 'agent:complete', {
+        outcome: `Upsell payment confirmed via API check. Payment ${paymentId}, Amount ${pl.amount_paid} paise.`,
+      });
+      run.upsellWebhookResolve?.();
+      console.log(`[CONFIRM_PAYMENT] Resolved upsell payment for run: ${run.context.runId}`);
+    }
+
+    return res.json({ status: 'ok', processed: true, paymentLinkId: pl.id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[CONFIRM_PAYMENT] Error:', message);
+    return res.status(500).json({ error: message });
+  }
+});

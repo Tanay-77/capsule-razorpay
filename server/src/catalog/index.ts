@@ -14,6 +14,7 @@ export interface Product {
   currency: string;
   billingType: BillingType;
   constraints: ProductConstraint[];
+  relatedSkuId?: string;
 }
 
 export const CATALOG: Product[] = [
@@ -39,6 +40,7 @@ export const CATALOG: Product[] = [
         message: 'Only available as a monthly subscription.',
       },
     ],
+    relatedSkuId: 'sku_support_priority',
   },
   {
     id: 'sku_basic_seat',
@@ -57,6 +59,7 @@ export const CATALOG: Product[] = [
         message: 'Only available as a monthly subscription.',
       },
     ],
+    relatedSkuId: 'sku_api_10k',
   },
   {
     id: 'sku_api_10k',

@@ -18,7 +18,7 @@ const MODES: Array<{ value: AutomationMode; label: string; note: string }> = [
 ];
 
 export default function HomePage() {
-  const [input, setInput] = useState('Provision 1 Basic seat on Linear for a 10-day QA sprint, budget capped at $45');
+  const [input, setInput] = useState('Provision 1 Basic seat for a 10-day QA sprint, budget capped at ₹1000');
   const [mode, setMode] = useState<AutomationMode>('mock');
   const [runId, setRunId] = useState<string>();
   const [renewalDemoSeconds, setRenewalDemoSeconds] = useState(90);

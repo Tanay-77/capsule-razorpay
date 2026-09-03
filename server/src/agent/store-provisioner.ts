@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { AgentRun } from './runs.js';
 import type { AutomationMode, PurchaseIntent } from './types.js';
 import { RazorpayApiClient } from '../razorpay/api-client.js';
+import { CATALOG } from '../catalog/index.js';
 
 const PAYMENT_LINK_EXPIRY_SECONDS = 10 * 60; // 10 minutes (configurable, but Razorpay minimum is 15m usually, wait let's use 15m to be safe)
 // Actually user said: "with expire_by set tight (configurable, default 10 minutes, use 60-90 seconds for live demo pacing)"
@@ -213,6 +214,119 @@ export class StoreProvisioner {
       setTimeout(() => reject(new Error('Payment Link expired without payment confirmation.')), webhookTimeout);
     });
     await Promise.race([run.webhookPromise, timeoutPromise]);
+
+    // Phase 4: Deterministic Upsells
+    const primarySku = CATALOG.find((p) => p.id === intent.skuId);
+    if (primarySku?.relatedSkuId) {
+      const addOnSku = CATALOG.find((p) => p.id === primarySku.relatedSkuId);
+      if (addOnSku) {
+        run.context.events.publish(run.context.runId, 'agent:upsell_suggested', {
+          primarySkuId: primarySku.id,
+          addOnSkuId: addOnSku.id,
+          addOnName: addOnSku.name,
+          priceInPaise: addOnSku.priceInPaise,
+        });
+        run.state.transition('upsell_suggested');
+
+        const accepted = await new Promise<boolean>((resolve) => {
+          run.upsellDecisionResolve = resolve;
+        });
+
+        if (!accepted) {
+          run.context.events.publish(run.context.runId, 'agent:upsell_declined', {});
+          run.state.transition('upsell_declined');
+          run.state.transition('complete');
+          run.context.events.publish(run.context.runId, 'agent:complete', {
+            outcome: `Payment confirmed via Razorpay webhook. Order ${order.id}. Upsell declined.`,
+          });
+        } else {
+          run.context.events.publish(run.context.runId, 'agent:upsell_accepted', {});
+          run.state.transition('upsell_accepted');
+
+          // Execute exact independent flow for the upsell
+          const upsellOrder = await razorpay.createOrder(run.context, {
+            amount: addOnSku.priceInPaise,
+            currency: 'INR',
+            receipt: `capsule_up_${run.context.runId.slice(0, 13)}`,
+            notes: {
+              merchant: 'capsule-demo-store',
+              skuId: addOnSku.id,
+              quantity: '1',
+              isUpsell: 'true',
+            },
+          });
+          
+          run.orderId = upsellOrder.id; // Update run.orderId so webhook routes correctly
+          run.state.transition('upsell_order_created');
+          run.context.events.publish(run.context.runId, 'agent:upsell_order_created', {
+            orderId: upsellOrder.id,
+            amountPaise: upsellOrder.amount,
+            currency: upsellOrder.currency,
+          });
+
+          run.context.events.publish(run.context.runId, 'agent:upsell_passkey_required', {
+            orderId: upsellOrder.id,
+            message: 'Approve the add-on purchase with your passkey.',
+          });
+          
+          await new Promise<void>((resolve) => {
+            run.upsellApprovalResolve = resolve;
+          });
+          run.state.transition('upsell_passkey_approved');
+
+          const upsellExpireBy = Math.floor(Date.now() / 1000) + Math.max(expiryDelaySeconds, 960);
+          const upsellPaymentLink = await razorpay.createPaymentLink(run.context, {
+            amount: addOnSku.priceInPaise,
+            currency: 'INR',
+            expire_by: upsellExpireBy,
+            reference_id: upsellOrder.id,
+            description: `1x ${addOnSku.name} (Add-on) – Capsule`,
+            callback_url: `${process.env.WEB_ORIGIN ?? 'http://localhost:3000'}/payment/complete?runId=${run.context.runId}`,
+            callback_method: 'get',
+            notes: {
+              capsule_run_id: run.context.runId,
+              razorpay_order_id: upsellOrder.id,
+            },
+          });
+
+          run.paymentLinkId = upsellPaymentLink.id;
+          run.paymentLinkUrl = upsellPaymentLink.short_url;
+
+          run.context.events.publish(run.context.runId, 'agent:upsell_payment_link_created', {
+            paymentLinkId: upsellPaymentLink.id,
+            shortUrl: upsellPaymentLink.short_url,
+            expireBy: upsellExpireBy,
+          });
+
+          run.context.events.publish(run.context.runId, 'agent:upsell_awaiting_payment', {
+            paymentLinkUrl: upsellPaymentLink.short_url,
+          });
+          run.state.transition('upsell_awaiting_payment');
+
+          run.upsellWebhookPromise = new Promise<void>((resolve, reject) => {
+            run.upsellWebhookResolve = resolve;
+            run.upsellWebhookReject = reject;
+          });
+
+          const upsellTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Upsell Payment Link expired without payment confirmation.')), (upsellExpireBy - Math.floor(Date.now() / 1000)) * 1000 + 30_000);
+          });
+          await Promise.race([run.upsellWebhookPromise, upsellTimeoutPromise]);
+        }
+      } else {
+        // No related sku found, just complete the flow
+        run.state.transition('complete');
+        run.context.events.publish(run.context.runId, 'agent:complete', {
+          outcome: `Payment confirmed via Razorpay webhook. Order ${order.id}.`,
+        });
+      }
+    } else {
+      // No related sku for primary sku, just complete the flow
+      run.state.transition('complete');
+      run.context.events.publish(run.context.runId, 'agent:complete', {
+        outcome: `Payment confirmed via Razorpay webhook. Order ${order.id}.`,
+      });
+    }
 
     return {
       mode,

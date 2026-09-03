@@ -136,8 +136,16 @@ export function AgentEventStream({
         <div ref={endRef} />
       </div>
 
-      {approvalPending ? (
+      {isApprovalPending(events) ? (
         <PasskeyApprovalPanel runId={runId!} />
+      ) : null}
+
+      {isUpsellApprovalPending(events) ? (
+        <PasskeyApprovalPanel runId={runId!} endpoint="approve_upsell" />
+      ) : null}
+
+      {latestUpsellDecision(events) ? (
+        <UpsellDecisionPanel runId={runId!} event={latestUpsellDecision(events)!} />
       ) : null}
 
       {renewalMoment ? (
@@ -263,7 +271,58 @@ function RenewalMomentPanel({
   );
 }
 
-function PasskeyApprovalPanel({ runId }: { runId: string }) {
+function UpsellDecisionPanel({ runId, event }: { runId: string, event: AgentEvent }) {
+  const [deciding, setDeciding] = useState(false);
+
+  async function handleDecision(accepted: boolean) {
+    if (!runId || deciding) return;
+    setDeciding(true);
+    try {
+      await fetch(`${API_URL}/api/agent/${runId}/upsell_decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accepted }),
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDeciding(false);
+    }
+  }
+
+  const { addOnName, priceInPaise } = event.payload;
+  const price = typeof priceInPaise === 'number' ? `₹${(priceInPaise / 100).toFixed(2)}` : '';
+
+  return (
+    <div className="border-t-4 border-ink bg-signal px-5 py-5 text-ink" role="status">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em]">Add-on suggested</p>
+      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xl font-black uppercase leading-tight sm:text-2xl">Add {readString(addOnName)} for {price}?</p>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.1em] text-ink/65">This is an independent purchase with a separate order.</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="border-4 border-ink bg-transparent px-6 py-4 text-sm font-black uppercase tracking-[0.12em] hover:bg-ink hover:text-signal disabled:opacity-50"
+            onClick={() => void handleDecision(false)}
+            disabled={deciding}
+          >
+            Decline
+          </button>
+          <button
+            className="border-4 border-ink bg-paper px-6 py-4 text-sm font-black uppercase tracking-[0.12em] hover:bg-ink hover:text-paper disabled:opacity-50"
+            onClick={() => void handleDecision(true)}
+            disabled={deciding}
+          >
+            Accept
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasskeyApprovalPanel({ runId, endpoint = 'approve' }: { runId: string, endpoint?: 'approve' | 'approve_upsell' }) {
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -306,7 +365,7 @@ function PasskeyApprovalPanel({ runId }: { runId: string }) {
         if (!verifyJson.verified) throw new Error('Authentication failed');
       }
       
-      const approveRes = await fetch(`${API_URL}/api/agent/${runId}/approve`, { 
+      const approveRes = await fetch(`${API_URL}/api/agent/${runId}/${endpoint}`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wasRegistration, credentialId }),
@@ -467,7 +526,64 @@ function presentEvent(event: AgentEvent): EventPresentation {
         message: 'Silence created no session, no token, and no merchant charge.',
         detail: 'No reusable payment credential was retained',
         tone: 'accent',
-      }; case 'agent:complete':
+      };
+    case 'agent:upsell_suggested':
+      return {
+        label: 'Add-on Suggested',
+        message: `You bought ${readString(payload.primarySkuId)}. Add ${readString(payload.addOnName)} for ₹${readNumber(payload.priceInPaise) / 100}?`,
+        detail: 'Accepting will start an independent checkout flow.',
+        tone: 'accent',
+      };
+    case 'agent:upsell_accepted':
+      return {
+        label: 'Add-on Accepted',
+        message: 'Proceeding to upsell checkout.',
+        detail: 'Starting secondary Razorpay flow',
+        tone: 'default',
+      };
+    case 'agent:upsell_declined':
+      return {
+        label: 'Add-on Declined',
+        message: 'No add-on purchased.',
+        detail: 'Skipping upsell',
+        tone: 'muted',
+      };
+    case 'agent:upsell_order_created':
+      return {
+        label: 'Razorpay order (Upsell)',
+        message: 'Exact-amount Razorpay Order created for add-on.',
+        detail: `Order ${shortId(readString(payload.orderId))} · ₹${readNumber(payload.amountPaise) / 100} ${readString(payload.currency, 'INR')}`,
+        tone: 'default',
+      };
+    case 'agent:upsell_passkey_required':
+      return {
+        label: 'Human approval required (Upsell)',
+        message: readString(payload.message, 'Approve the add-on purchase with your passkey.'),
+        detail: 'Face ID / Touch ID / device passkey',
+        tone: 'accent',
+      };
+    case 'agent:upsell_payment_link_created':
+      return {
+        label: 'Razorpay link (Upsell)',
+        message: 'Payment Link generated for add-on.',
+        detail: `Link ${shortId(readString(payload.paymentLinkId))} · expires in 15m`,
+        tone: 'default',
+      };
+    case 'agent:upsell_awaiting_payment':
+      return {
+        label: 'Awaiting payment (Upsell)',
+        message: 'Open the Payment Link to complete the add-on checkout.',
+        detail: readString(payload.paymentLinkUrl) || undefined,
+        tone: 'inverse',
+      };
+    case 'agent:upsell_webhook_confirmed':
+      return {
+        label: 'Payment verified (Upsell)',
+        message: 'Webhook received for add-on. Amount matches Order.',
+        detail: `Payment ${shortId(readString(payload.paymentId))} · ${readNumber(payload.amountPaidPaise)} paise`,
+        tone: 'inverse',
+      };
+    case 'agent:complete':
       return {
         label: 'Complete',
         message: readString(payload.outcome, 'Run completed.'),
@@ -524,7 +640,26 @@ function isApprovalPending(events: AgentEvent[]): boolean {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const type = events[index]?.type;
     if (type === 'agent:passkey_required') return true;
-    if (type === 'agent:awaiting_payment' || type === 'agent:webhook_confirmed' || type === 'agent:complete' || type === 'agent:error') return false;
+    if (type === 'agent:awaiting_payment' || type === 'agent:webhook_confirmed' || type === 'agent:complete' || type === 'agent:error' || type === 'agent:upsell_suggested') return false;
+  }
+  return false;
+}
+
+function latestUpsellDecision(events: AgentEvent[]): AgentEvent | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event) continue;
+    if (event.type === 'agent:upsell_suggested') return event;
+    if (event.type === 'agent:upsell_accepted' || event.type === 'agent:upsell_declined' || event.type === 'agent:complete' || event.type === 'agent:error') return undefined;
+  }
+  return undefined;
+}
+
+function isUpsellApprovalPending(events: AgentEvent[]): boolean {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index]?.type;
+    if (type === 'agent:upsell_passkey_required') return true;
+    if (type === 'agent:upsell_awaiting_payment' || type === 'agent:upsell_webhook_confirmed' || type === 'agent:complete' || type === 'agent:error') return false;
   }
   return false;
 }
@@ -538,6 +673,14 @@ function phaseFor(type: AgentEventType): string | undefined {
     'agent:payment_link_created': 'LINK CREATED',
     'agent:awaiting_payment': 'AWAITING PAYMENT',
     'agent:webhook_confirmed': 'PAYMENT CONFIRMED',
+    'agent:upsell_suggested': 'UPSELL',
+    'agent:upsell_accepted': 'UPSELL',
+    'agent:upsell_declined': 'UPSELL',
+    'agent:upsell_order_created': 'UPSELL',
+    'agent:upsell_passkey_required': 'UPSELL',
+    'agent:upsell_payment_link_created': 'UPSELL',
+    'agent:upsell_awaiting_payment': 'UPSELL',
+    'agent:upsell_webhook_confirmed': 'UPSELL',
     'agent:dom_step': 'AUTOMATING',
     'agent:dry_run_complete': 'DRY RUN DONE',
     'agent:complete': 'COMPLETE',

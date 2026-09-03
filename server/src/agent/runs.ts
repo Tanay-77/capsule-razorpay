@@ -23,6 +23,13 @@ export interface AgentRun {
   webhookResolve?: () => void;
   webhookReject?: (reason?: any) => void;
   approvalResolve?: () => void;
+
+  // Promises used for synchronization in the upsell flow
+  upsellDecisionResolve?: (accepted: boolean) => void;
+  upsellApprovalResolve?: () => void;
+  upsellWebhookPromise?: Promise<void>;
+  upsellWebhookResolve?: () => void;
+  upsellWebhookReject?: (reason?: any) => void;
 }
 
 const runs = new Map<string, AgentRun>();
@@ -42,6 +49,14 @@ export function getAgentRun(runId: string): AgentRun | undefined {
 export function getAgentRunByOrderId(orderId: string): AgentRun | undefined {
   for (const run of runs.values()) {
     if (run.orderId === orderId) return run;
+  }
+  return undefined;
+}
+
+/** Look up a run by its Razorpay Payment Link ID. */
+export function getAgentRunByPaymentLinkId(paymentLinkId: string): AgentRun | undefined {
+  for (const run of runs.values()) {
+    if (run.paymentLinkId === paymentLinkId) return run;
   }
   return undefined;
 }
