@@ -157,6 +157,8 @@ export function AgentEventStream({
         />
       ) : null}
 
+      <AuditTrailPanel events={events} />
+
       <div className="grid border-t-4 border-signal bg-paper text-ink sm:grid-cols-[1fr_1fr_auto]">
         <StatusCell label="Merchant scope" value={status.merchant} />
         <StatusCell
@@ -725,4 +727,94 @@ function readString(value: unknown, fallback = ''): string {
 
 function readNumber(value: unknown): number {
   return typeof value === 'number' ? value : 0;
+}
+
+function extractAuditTrail(events: AgentEvent[]) {
+  const trail = {
+    orderId: '--',
+    amount: '--',
+    item: '--',
+    passkeyTimestamp: '--',
+    paymentLinkId: '--',
+    webhookTimestamp: '--',
+    webhookVerified: false,
+    finalStatus: 'IN PROGRESS',
+  };
+
+  for (const event of events) {
+    if (event.type === 'agent:intent_parsed') {
+      trail.item = readString(event.payload.skuId, '--');
+    }
+    if (event.type === 'agent:order_created' || event.type === 'agent:upsell_order_created') {
+      trail.orderId = readString(event.payload.orderId, '--');
+      const amountPaise = readNumber(event.payload.amountPaise);
+      trail.amount = amountPaise ? `₹${(amountPaise / 100).toFixed(2)} INR` : '--';
+    }
+    if (event.type === 'agent:payment_link_created' || event.type === 'agent:upsell_payment_link_created') {
+      trail.passkeyTimestamp = new Date(event.timestamp).toLocaleTimeString([], { hour12: false });
+      trail.paymentLinkId = readString(event.payload.paymentLinkId, '--');
+    }
+    if (event.type === 'agent:webhook_confirmed' || event.type === 'agent:upsell_webhook_confirmed') {
+      trail.webhookTimestamp = new Date(event.timestamp).toLocaleTimeString([], { hour12: false });
+      trail.webhookVerified = true;
+    }
+    if (event.type === 'agent:complete') {
+      trail.finalStatus = 'COMPLETE';
+    }
+    if (event.type === 'agent:error') {
+      trail.finalStatus = 'FAILED';
+    }
+    if (event.type === 'agent:dry_run_complete') {
+      trail.finalStatus = 'DRY RUN';
+    }
+  }
+  return trail;
+}
+
+function AuditTrailPanel({ events }: { events: AgentEvent[] }) {
+  const trail = useMemo(() => extractAuditTrail(events), [events]);
+  if (events.length === 0) return null;
+
+  return (
+    <div className="border-t-4 border-signal bg-paper text-ink p-4 sm:p-5">
+      <h3 className="mb-4 text-[11px] font-black uppercase tracking-[0.18em] text-signal">
+        Audit Trail (Cryptographic & Financial Proof)
+      </h3>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 gap-y-6 text-xs font-bold uppercase tracking-[0.05em]">
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Order ID</span>
+          <span className="mt-1">{shortId(trail.orderId)}</span>
+        </div>
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Exact Amount</span>
+          <span className="mt-1">{trail.amount}</span>
+        </div>
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Catalog Item</span>
+          <span className="mt-1">{trail.item}</span>
+        </div>
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Final Status</span>
+          <span className="mt-1">{trail.finalStatus}</span>
+        </div>
+        
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Passkey Approved</span>
+          <span className="mt-1">{trail.passkeyTimestamp}</span>
+        </div>
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Payment Link (Expiry 15m)</span>
+          <span className="mt-1">{shortId(trail.paymentLinkId)}</span>
+        </div>
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Webhook Rcvd</span>
+          <span className="mt-1">{trail.webhookTimestamp}</span>
+        </div>
+        <div className="flex flex-col border-l-2 border-ink pl-3">
+          <span className="text-[9px] opacity-60">Signature Verified</span>
+          <span className="mt-1">{trail.webhookVerified ? 'TRUE' : '--'}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
