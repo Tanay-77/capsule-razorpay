@@ -21,6 +21,7 @@ export default function HomePage() {
   const [input, setInput] = useState('Provision 1 Basic seat for a 10-day QA sprint, budget capped at ₹1000');
   const [mode, setMode] = useState<AutomationMode>('mock');
   const [runId, setRunId] = useState<string>();
+  const [merchantId, setMerchantId] = useState('capsule-demo-store');
   const [renewalDemoSeconds, setRenewalDemoSeconds] = useState(90);
   const [renewalDecisionSeconds, setRenewalDecisionSeconds] = useState(12);
   const [submitting, setSubmitting] = useState(false);
@@ -43,7 +44,7 @@ export default function HomePage() {
       const intentResponse = await fetch(`${API_URL}/api/agent/intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: input.trim() }),
+        body: JSON.stringify({ input: input.trim(), merchantId }),
       });
       const intent = (await intentResponse.json()) as ApiResponse;
       if (intent.runId) setRunId(intent.runId);
@@ -160,6 +161,24 @@ export default function HomePage() {
                   value={renewalDecisionSeconds}
                 />
               </label>
+            </div>
+            
+            <div className="grid border-b-2 border-ink sm:grid-cols-2">
+              <label className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">
+                <span>
+                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Merchant</span>
+                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">Simulated catalog</span>
+                </span>
+                <select
+                  className="w-48 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
+                  onChange={(event) => setMerchantId(event.target.value)}
+                  value={merchantId}
+                >
+                  <option value="capsule-demo-store">Capsule Store</option>
+                  <option value="cloudops-hosting">CloudOps Hosting</option>
+                </select>
+              </label>
+              <div className="hidden sm:block"></div>
             </div>
 
             <div className="grid sm:grid-cols-3">

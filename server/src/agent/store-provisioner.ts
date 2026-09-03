@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { AgentRun } from './runs.js';
 import type { AutomationMode, PurchaseIntent } from './types.js';
 import { RazorpayApiClient } from '../razorpay/api-client.js';
-import { CATALOG } from '../catalog/index.js';
+import { MERCHANTS } from '../catalog/merchants.js';
 
 const PAYMENT_LINK_EXPIRY_SECONDS = 10 * 60; // 10 minutes (configurable, but Razorpay minimum is 15m usually, wait let's use 15m to be safe)
 // Actually user said: "with expire_by set tight (configurable, default 10 minutes, use 60-90 seconds for live demo pacing)"
@@ -128,7 +128,7 @@ export class StoreProvisioner {
       currency: 'INR',
       receipt: `capsule_${run.context.runId.slice(0, 16)}`,
       notes: {
-        merchant: 'capsule-demo-store',
+        merchant: run.merchantId || 'capsule-demo-store',
         skuId: intent.skuId,
         quantity: String(intent.quantity),
         ...(run.campaign ? { campaign: run.campaign } : {}),
@@ -216,9 +216,10 @@ export class StoreProvisioner {
     await Promise.race([run.webhookPromise, timeoutPromise]);
 
     // Phase 4: Deterministic Upsells
-    const primarySku = CATALOG.find((p) => p.id === intent.skuId);
+    const activeCatalog = MERCHANTS[run.merchantId || 'capsule-demo-store']?.catalog || [];
+    const primarySku = activeCatalog.find((p) => p.id === intent.skuId);
     if (primarySku?.relatedSkuId) {
-      const addOnSku = CATALOG.find((p) => p.id === primarySku.relatedSkuId);
+      const addOnSku = activeCatalog.find((p) => p.id === primarySku.relatedSkuId);
       if (addOnSku) {
         run.context.events.publish(run.context.runId, 'agent:upsell_suggested', {
           primarySkuId: primarySku.id,
@@ -249,10 +250,10 @@ export class StoreProvisioner {
             currency: 'INR',
             receipt: `capsule_up_${run.context.runId.slice(0, 13)}`,
             notes: {
-              merchant: 'capsule-demo-store',
+              merchant: run.merchantId || 'capsule-demo-store',
               skuId: addOnSku.id,
               quantity: '1',
-              isUpsell: 'true',
+              upsell_to_order_id: order.id,
             },
           });
           

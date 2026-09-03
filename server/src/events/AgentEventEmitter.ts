@@ -9,6 +9,8 @@ export interface AgentEventPayloads {
     requestedDurationDays: number;
     resolvedAmountPaise: number;
     billingNote: string;
+    merchantId?: string;
+    merchantName?: string;
   };
   'agent:intent_parse_attempt': {
     attempt: number;

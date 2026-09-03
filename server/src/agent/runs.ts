@@ -11,6 +11,8 @@ export interface AgentRun {
   paymentLinkId?: string;
   paymentLinkUrl?: string;
   intent?: PurchaseIntent;
+  merchantId?: string;
+  merchantName?: string;
   campaign?: string;
   automationStarted?: boolean;
   automationMode?: AutomationMode;

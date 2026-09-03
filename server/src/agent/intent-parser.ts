@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import type { AgentExecutionContext } from './context.js';
 import type { PurchaseIntent } from './types.js';
-import { CATALOG } from '../catalog/index.js';
+import type { Product } from '../catalog/index.js';
 
 const MODEL = 'gemini-3.5-flash-lite';
 const MAX_ATTEMPTS = 2;
@@ -30,7 +30,7 @@ const SYSTEM_PROMPT = `You are a strict, honest purchasing agent resolving user 
 Return only a valid JSON object matching the requested schema.
 
 CATALOG GROUND TRUTH:
-${JSON.stringify(CATALOG, null, 2)}
+{{CATALOG_JSON}}
 
 INSTRUCTIONS:
 1. Identify the SKU that best matches the request. Map the catalog's "id" field to the output's "skuId" field.
@@ -62,6 +62,7 @@ export class IntentParser {
   async parse(
     context: AgentExecutionContext,
     input: string,
+    catalog: Product[]
   ): Promise<PurchaseIntent> {
     const normalizedInput = input.trim();
     if (!normalizedInput) throw new IntentParserValidationError('input is required');
@@ -74,7 +75,7 @@ export class IntentParser {
           model: this.model,
           status: 'started',
         });
-        const extraction = await this.extract(normalizedInput, validationFeedback);
+        const extraction = await this.extract(normalizedInput, catalog, validationFeedback);
         context.events.publish(context.runId, 'agent:intent_parse_attempt', {
           attempt,
           model: this.model,
@@ -115,8 +116,14 @@ export class IntentParser {
 
   private async extract(
     input: string,
+    catalog: Product[],
     validationFeedback?: string,
   ): Promise<IntentExtraction> {
+    const prompt = SYSTEM_PROMPT.replace(
+      '{{CATALOG_JSON}}',
+      JSON.stringify(catalog, null, 2)
+    );
+
     const response = await this.client.models.generateContent({
       model: this.model,
       contents: [
@@ -124,8 +131,8 @@ export class IntentParser {
       ],
       config: {
         systemInstruction: validationFeedback
-          ? `${SYSTEM_PROMPT}\n\nThe previous output failed validation: ${validationFeedback}. Correct only that issue without guessing.`
-          : SYSTEM_PROMPT,
+          ? `${prompt}\n\nThe previous output failed validation: ${validationFeedback}. Correct only that issue without guessing.`
+          : prompt,
         responseMimeType: 'application/json',
       }
     });
@@ -153,8 +160,9 @@ export class IntentParser {
 export async function parseIntent(
   context: AgentExecutionContext,
   input: string,
+  catalog: Product[]
 ): Promise<PurchaseIntent> {
-  return new IntentParser().parse(context, input);
+  return new IntentParser().parse(context, input, catalog);
 }
 
 function asValidationError(error: unknown): IntentParserValidationError | undefined {

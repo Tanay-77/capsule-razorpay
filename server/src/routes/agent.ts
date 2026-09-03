@@ -3,6 +3,7 @@ import { agentEvents, type AgentEvent } from '../events/AgentEventEmitter.js';
 import { createAgentRun, getAgentRun, type AgentRun } from '../agent/runs.js';
 import { parseIntent } from '../agent/intent-parser.js';
 import { IntentParserValidationError } from '../agent/intent-parser.js';
+import { MERCHANTS } from '../catalog/merchants.js';
 import { StoreProvisioner } from '../agent/store-provisioner.js';
 import { clearRenewalTimers, scheduleRenewalDemo } from '../agent/renewal-demo.js';
 import type { AutomationMode } from '../agent/types.js';
@@ -43,13 +44,33 @@ agentRouter.get('/stream', (req, res) => {
 
 agentRouter.post('/intent', async (req, res) => {
   const input = typeof req.body?.input === 'string' ? req.body.input.trim() : '';
+  const merchantId = typeof req.body?.merchantId === 'string' ? req.body.merchantId : 'capsule-demo-store';
   if (!input) return res.status(400).json({ error: 'input is required' });
 
+  const merchant = MERCHANTS[merchantId];
+  if (!merchant) return res.status(400).json({ error: 'invalid merchantId' });
+
   const run = createAgentRun();
+  run.merchantId = merchant.id;
+  run.merchantName = merchant.name;
+
   try {
-    const intent = await parseIntent(run.context, input);
+    const intent = await parseIntent(run.context, input, merchant.catalog);
     run.intent = intent;
     run.state.transition('intent_parsed');
+    
+    // Supplement the event with merchant context for the frontend
+    run.context.events.publish(run.context.runId, 'agent:intent_parsed', {
+      intent: 'purchase',
+      skuId: intent.skuId,
+      quantity: intent.quantity,
+      requestedDurationDays: intent.requestedDurationDays,
+      resolvedAmountPaise: intent.resolvedAmountPaise,
+      billingNote: intent.billingNote,
+      merchantId: merchant.id,
+      merchantName: merchant.name,
+    });
+    
     return res.status(201).json({ runId: run.context.runId, intent });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Intent parsing failed';
@@ -119,6 +140,8 @@ agentRouter.post('/renewal/approve', (req, res) => {
   originalRun.state.transition('renewal_approved');
 
   const renewalRun = createAgentRun();
+  renewalRun.merchantId = originalRun.merchantId;
+  renewalRun.merchantName = originalRun.merchantName;
   
   let newAmountPaise = originalRun.intent.resolvedAmountPaise;
   let newBillingNote = `Renewal is for an additional cycle, estimated at ₹${originalRun.intent.resolvedAmountPaise / 100}.`;
@@ -141,6 +164,8 @@ agentRouter.post('/renewal/approve', (req, res) => {
     requestedDurationDays: renewalRun.intent.requestedDurationDays,
     resolvedAmountPaise: renewalRun.intent.resolvedAmountPaise,
     billingNote: renewalRun.intent.billingNote,
+    merchantId: renewalRun.merchantId,
+    merchantName: renewalRun.merchantName,
   });
   renewalRun.state.transition('intent_parsed');
 

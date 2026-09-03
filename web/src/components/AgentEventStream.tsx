@@ -431,7 +431,7 @@ function deriveSessionStatus(events: AgentEvent[]): SessionStatus {
   for (const event of events) {
     const payload = event.payload;
     if (event.type === 'agent:intent_parsed') {
-      status.merchant = 'CAPSULE STORE';
+      status.merchant = (payload.merchantName as string)?.toUpperCase() || 'CAPSULE STORE';
       status.amount = typeof payload.resolvedAmountPaise === 'number' ? (payload.resolvedAmountPaise / 100).toFixed(2) : '--';
       status.currency = 'INR';
       status.amountSource = 'ESTIMATE';
