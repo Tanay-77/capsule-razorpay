@@ -11,21 +11,15 @@ interface ApiResponse {
   error?: string;
 }
 
-const MODES: Array<{ value: AutomationMode; label: string; note: string }> = [
-  { value: 'mock', label: 'MOCK', note: 'No browser or payment network' },
-  { value: 'dry-run', label: 'DRY', note: 'Real quote + Razorpay Order' },
-  { value: 'real', label: 'REAL', note: 'Can submit a sandbox purchase' },
-];
-
 export default function HomePage() {
   const [input, setInput] = useState('Provision 1 Basic seat for a 10-day QA sprint, budget capped at ₹1000');
   const [mode, setMode] = useState<AutomationMode>('mock');
-  const [runId, setRunId] = useState<string>();
   const [merchantId, setMerchantId] = useState('capsule-demo-store');
-  const [renewalDemoSeconds, setRenewalDemoSeconds] = useState(90);
-  const [renewalDecisionSeconds, setRenewalDecisionSeconds] = useState(12);
+  const [runId, setRunId] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
+  const [renewalDemoSeconds, setRenewalDemoSeconds] = useState(90);
+  const [renewalDecisionSeconds, setRenewalDecisionSeconds] = useState(12);
 
   useEffect(() => {
     const returnedRunId = new URLSearchParams(window.location.search).get('runId');
@@ -74,146 +68,134 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen bg-paper text-ink">
-      <header className="border-b-4 border-ink">
-        <div className="mx-auto flex max-w-[1500px] items-stretch justify-between px-4 sm:px-7">
-          <div className="flex items-center border-x-4 border-ink px-4 py-4 sm:px-6">
-            <span className="text-xl font-black uppercase tracking-[-0.06em] sm:text-2xl">Capsule</span>
-            <span className="ml-3 bg-signal px-2 py-1 text-[9px] font-black uppercase tracking-[0.16em]">Sandbox</span>
-          </div>
-          <div className="hidden items-center border-r-4 border-ink px-6 text-[10px] font-bold uppercase tracking-[0.18em] text-ink/60 sm:flex">
-            Quote → approve → one-time pay
-          </div>
+    <main className="min-h-screen bg-[#050508] text-white font-sans flex flex-col relative overflow-hidden">
+      <div 
+        className="flex flex-col min-h-[100vh] w-full bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/image.png')" }}
+      >
+      {/* Top Navigation matches reference */}
+      <header className="w-full max-w-[1400px] mx-auto grid grid-cols-3 items-center px-8 py-8 z-10 relative">
+        <div className="flex items-center gap-3 justify-start">
+          <img src="/capsule-logo.png" alt="Capsule Logo" className="h-8 w-auto object-contain" />
+          <span className="text-xl font-bold tracking-tight text-white/90">Capsule</span>
+        </div>
+        <nav className="hidden md:flex items-center justify-center gap-10 text-sm font-medium text-white/70">
+          <a href="#" className="hover:text-white transition-colors">Documentation</a>
+          <a href="#" className="hover:text-white transition-colors">Sandbox</a>
+          <a href="#" className="hover:text-white transition-colors">Security</a>
+          <a href="#" className="hover:text-white transition-colors">Enterprise</a>
+        </nav>
+        <div className="flex justify-end">
+          <a href="#" className="text-sm font-medium text-white/70 hover:text-white transition-colors">Dashboard</a>
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1500px] px-4 py-5 sm:px-7 sm:py-7">
-        <section className="border-4 border-ink bg-paper">
-          <div className="grid border-b-2 border-ink lg:grid-cols-[11rem_1fr]">
-            <div className="border-b-2 border-ink bg-ink px-4 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-paper lg:border-b-0 lg:border-r-2 lg:border-paper">
-              Purchase intent
+      {/* Hero Section */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-20 relative">
+        <h1 className="text-[3rem] md:text-[4.5rem] font-medium tracking-tight mb-6 text-center leading-tight text-white">
+          The AI Purchasing Agent
+        </h1>
+        <p className="text-center text-white/70 max-w-2xl text-lg md:text-[1.1rem] mb-14 leading-relaxed font-light">
+          Capsule transforms natural language into secure, verifiable checkout flows.<br />
+          Streamlined infrastructure provisioning with cryptographic passkey approvals.
+        </p>
+
+        {/* Glassmorphism Input Container */}
+        <form
+          onSubmit={submitIntent}
+          className="w-full max-w-[52rem] bg-[#f0f4ff]/20 backdrop-blur-2xl border border-white/20 rounded-[2rem] p-6 pt-8 pb-5 shadow-2xl relative"
+        >
+          <textarea
+            autoFocus
+            className="w-full bg-transparent resize-none text-white placeholder:text-white/50 text-xl outline-none min-h-[140px] leading-relaxed font-light"
+            placeholder="Type something to generate"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') e.currentTarget.form?.requestSubmit();
+            }}
+          />
+
+          <div className="flex items-end justify-between mt-6">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Pill Selectors replacing the Android/iOS tags in the reference */}
+              <select
+                value={merchantId}
+                title="Merchant Catalog"
+                onChange={(e) => setMerchantId(e.target.value)}
+                className="bg-white/10 hover:bg-white/20 text-white/90 border border-transparent hover:border-white/20 rounded-full px-5 py-2.5 text-sm outline-none transition-all appearance-none cursor-pointer font-medium"
+              >
+                <option value="capsule-demo-store" className="bg-slate-900 text-white">Capsule Store</option>
+                <option value="cloudops-hosting" className="bg-slate-900 text-white">CloudOps Hosting</option>
+              </select>
+
+              <select
+                value={mode}
+                title="Automation Mode"
+                onChange={(e) => setMode(e.target.value as AutomationMode)}
+                className="bg-white/10 hover:bg-white/20 text-white/90 border border-transparent hover:border-white/20 rounded-full px-5 py-2.5 text-sm outline-none transition-all appearance-none cursor-pointer font-medium capitalize"
+              >
+                <option value="mock" className="bg-slate-900 text-white">Mock</option>
+                <option value="dry-run" className="bg-slate-900 text-white">Dry Run</option>
+                <option value="real" className="bg-slate-900 text-white">Real Mode</option>
+              </select>
+
+              <input
+                type="number"
+                title="Billing Cycle Demo (sec)"
+                className="bg-white/10 hover:bg-white/20 text-white/90 border border-transparent hover:border-white/20 rounded-full px-4 py-2.5 text-sm outline-none transition-all w-16 text-center font-medium"
+                value={renewalDemoSeconds}
+                onChange={(e) => setRenewalDemoSeconds(Number(e.target.value))}
+                min={5}
+                max={600}
+              />
             </div>
-            <div className="px-4 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-ink/55">
-              Natural language becomes an exact, merchant-scoped checkout
-            </div>
+
+            <button
+              type="submit"
+              disabled={submitting || !input.trim()}
+              className="bg-[#12121a] hover:bg-black text-white/90 px-10 py-3.5 rounded-full font-medium transition-colors disabled:opacity-50 flex items-center justify-center shrink-0 ml-4 shadow-lg border border-white/5"
+            >
+              {submitting ? '...' : 'Generate'}
+            </button>
           </div>
+        </form>
 
-          <form onSubmit={submitIntent}>
-            <div className="border-b-2 border-ink p-4 sm:p-5">
-              <div className="border-2 border-ink bg-paper transition-shadow focus-within:shadow-[6px_6px_0_#11120f]">
-                <label className="sr-only" htmlFor="intent">Command Capsule agent</label>
-                <textarea
-                  autoFocus
-                  className="min-h-32 w-full resize-none bg-transparent px-5 py-5 text-base font-bold leading-7 outline-none placeholder:text-ink/30 sm:text-lg"
-                  id="intent"
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                      event.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  value={input}
-                  placeholder="Ask Capsule to provision software for your team…"
-                />
-                <div className="flex items-center justify-between border-t-2 border-ink px-3 py-2">
-                  <div className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 bg-signal" aria-hidden="true" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.16em]">Capsule agent</span>
-                    <span className="hidden text-[9px] font-bold uppercase tracking-[0.1em] text-ink/45 sm:inline">Ctrl + Enter to send</span>
-                  </div>
-                  <button
-                    aria-label="Send command to Capsule"
-                    className="flex h-12 w-12 items-center justify-center border-2 border-ink bg-signal text-2xl font-black transition-colors hover:bg-ink hover:text-paper disabled:cursor-not-allowed disabled:bg-ink/15 disabled:text-ink/40"
-                    disabled={submitting || !input.trim()}
-                    type="submit"
-                  >
-                    {submitting ? <span className="text-sm">…</span> : <span aria-hidden="true">↑</span>}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="grid border-b-2 border-ink sm:grid-cols-2">
-              <label className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">
-                <span>
-                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Billing-cycle simulation</span>
-                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">30 days compressed to 5–600 seconds</span>
-                </span>
-                <input
-                  className="w-20 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
-                  min={5}
-                  max={600}
-                  onChange={(event) => setRenewalDemoSeconds(Number(event.target.value))}
-                  type="number"
-                  value={renewalDemoSeconds}
-                />
-              </label>
-              <label className="grid grid-cols-[1fr_auto] items-center gap-4 px-4 py-3">
-                <span>
-                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Silence proof window</span>
-                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">Resolve unanswered after 3–120 seconds</span>
-                </span>
-                <input
-                  className="w-20 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
-                  min={3}
-                  max={120}
-                  onChange={(event) => setRenewalDecisionSeconds(Number(event.target.value))}
-                  type="number"
-                  value={renewalDecisionSeconds}
-                />
-              </label>
-            </div>
-            
-            <div className="grid border-b-2 border-ink sm:grid-cols-2">
-              <label className="grid grid-cols-[1fr_auto] items-center gap-4 border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">
-                <span>
-                  <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Merchant</span>
-                  <span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.08em] text-ink/50">Simulated catalog</span>
-                </span>
-                <select
-                  className="w-48 border-2 border-ink bg-paper px-2 py-2 text-right text-sm font-black outline-none focus:bg-signal"
-                  onChange={(event) => setMerchantId(event.target.value)}
-                  value={merchantId}
-                >
-                  <option value="capsule-demo-store">Capsule Store</option>
-                  <option value="cloudops-hosting">CloudOps Hosting</option>
-                </select>
-              </label>
-              <div className="hidden sm:block"></div>
-            </div>
+        <p className="mt-16 text-white/50 text-sm font-medium tracking-wide">
+          <span className="inline-block w-1 h-1 rounded-full bg-white/50 mr-2 align-middle"></span>
+          Launch app 10x faster
+        </p>
 
-            <div className="grid sm:grid-cols-3">
-              {MODES.map((item, index) => (
-                <button
-                  className={`min-h-20 border-b-2 border-ink px-4 py-3 text-left transition-colors last:border-b-0 sm:border-b-0 ${index < MODES.length - 1 ? 'sm:border-r-2' : ''} ${mode === item.value ? 'bg-ink text-paper' : 'bg-paper hover:bg-signal'}`}
-                  key={item.value}
-                  onClick={() => setMode(item.value)}
-                  type="button"
-                  aria-pressed={mode === item.value}
-                >
-                  <span className="block text-xs font-black tracking-[0.16em]">[{mode === item.value ? 'X' : ' '}] {item.label}</span>
-                  <span className="mt-2 block text-[9px] font-bold uppercase tracking-[0.08em] opacity-55">{item.note}</span>
-                </button>
-              ))}
-            </div>
-          </form>
-        </section>
-
-        {error ? (
-          <div className="mt-4 border-4 border-signal bg-ink px-5 py-4 text-sm font-bold text-signal" role="alert">
-            ERROR / {error}
+        {error && (
+          <div className="mt-8 bg-red-500/10 border border-red-500/20 text-red-200 px-6 py-3 rounded-2xl backdrop-blur-md font-medium text-sm">
+            {error}
           </div>
-        ) : null}
-
-        <div className="mt-5">
-          <AgentEventStream runId={runId} onRenewalRunStarted={setRunId} />
-        </div>
-
-        <footer className="grid border-x-4 border-b-4 border-ink text-[9px] font-black uppercase tracking-[0.14em] sm:grid-cols-3">
-          <p className="border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">01 / Actual total read before order</p>
-          <p className="border-b-2 border-ink px-4 py-3 sm:border-b-0 sm:border-r-2">02 / Passkey stays human-controlled</p>
-          <p className="px-4 py-3">03 / No persistent merchant card</p>
-        </footer>
+        )}
       </div>
+
+      </div>
+
+      {/* Sleek Agent Dashboard rendered inline */}
+      {runId && (
+        <div className="w-full max-w-[1400px] mx-auto px-4 pb-20 animate-in fade-in slide-in-from-bottom-8 duration-700 relative z-20">
+          <header className="w-full flex items-center justify-between px-8 py-4 border border-white/20 border-b-0 bg-[#0f111a] rounded-t-3xl shadow-2xl">
+            <div className="flex items-center gap-4">
+              <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="font-medium text-white/90 tracking-wide">Capsule Live Dashboard</span>
+            </div>
+            <button
+              onClick={() => setRunId(undefined)}
+              className="text-white/50 hover:text-white transition-colors text-sm font-medium"
+              title="Close Dashboard"
+            >
+              Close
+            </button>
+          </header>
+          <div className="w-full bg-[#0a0a0f] border border-white/20 rounded-b-3xl overflow-hidden shadow-2xl relative">
+            <AgentEventStream runId={runId} onRenewalRunStarted={setRunId} />
+          </div>
+        </div>
+      )}
     </main>
   );
 }

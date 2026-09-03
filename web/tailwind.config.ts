@@ -17,6 +17,9 @@ const config: Config = {
       boxShadow: {
         card: '0 24px 80px rgba(17, 18, 15, 0.10)',
       },
+      backgroundImage: {
+        landing: "url('/landing.png')",
+      },
     },
   },
   plugins: [],

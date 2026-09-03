@@ -109,21 +109,21 @@ export function AgentEventStream({
   }
 
   return (
-    <section className="flex min-h-[34rem] flex-col border-4 border-ink bg-ink text-paper lg:min-h-[42rem]">
-      <div className="flex items-center justify-between border-b-2 border-paper/40 px-4 py-3 text-[11px] font-bold uppercase tracking-[0.18em] sm:px-5">
-        <span>Capsule / live execution</span>
+    <section className="flex h-full flex-col text-white/90 font-sans text-sm">
+      <div className="flex items-center justify-between border-b border-white/10 bg-[#0f111a] px-6 py-4 text-xs font-medium tracking-wide">
+        <span className="text-white/50">Execution Log</span>
         <span className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 ${connected ? 'bg-signal' : 'border border-paper/60'}`} />
-          {connected ? 'streaming' : runId ? 'connecting' : 'standby'}
+          <span className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-white/30'}`} />
+          {connected ? 'Streaming' : runId ? 'Connecting...' : 'Standby'}
         </span>
       </div>
 
-      <div className="terminal-scroll min-h-0 flex-1 overflow-y-auto" role="log" aria-live="polite" aria-label="Live agent events">
+      <div className="terminal-scroll min-h-0 flex-1 overflow-y-auto px-6 py-4" role="log" aria-live="polite" aria-label="Live agent events">
         {events.length === 0 ? (
-          <div className="grid min-h-[26rem] place-items-center px-8 text-center text-sm uppercase tracking-[0.12em] text-paper/45">
+          <div className="flex h-full items-center justify-center text-center text-sm tracking-wide text-white/30">
             <div>
-              <p className="text-4xl text-paper/20">_</p>
-              <p className="mt-3">{runId ? 'Opening event channel' : 'Awaiting command'}</p>
+              <p className="text-3xl mb-2 opacity-50">⚡️</p>
+              <p>{runId ? 'Establishing secure connection...' : 'Awaiting command'}</p>
             </div>
           </div>
         ) : (
@@ -159,10 +159,10 @@ export function AgentEventStream({
 
       <AuditTrailPanel events={events} />
 
-      <div className="grid border-t-4 border-signal bg-paper text-ink sm:grid-cols-[1fr_1fr_auto]">
+      <div className="grid border-t border-white/10 bg-[#050508] sm:grid-cols-3">
         <StatusCell label="Merchant scope" value={status.merchant} />
         <StatusCell
-          label={`${status.amountSource.toLowerCase()} amount`}
+          label={`${status.amountSource} amount`}
           value={formatAmount(status.amount, status.currency)}
         />
         <StatusCell label="State" value={status.phase} last />
@@ -174,32 +174,30 @@ export function AgentEventStream({
 function EventLine({ event, index }: { event: AgentEvent; index: number }) {
   const view = presentEvent(event);
   const toneClasses: Record<EventTone, string> = {
-    default: 'border-paper/20 bg-transparent text-paper',
-    muted: 'border-paper/10 bg-paper/[0.03] text-paper/65',
-    accent: 'border-signal bg-signal text-ink',
-    inverse: 'border-paper bg-paper text-ink',
-    error: 'border-signal bg-ink text-signal',
+    default: 'border-white/10 bg-transparent text-white',
+    muted: 'border-white/5 bg-[#12121a] text-white/60',
+    accent: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    inverse: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
+    error: 'border-red-500/30 bg-red-500/10 text-red-400',
   };
 
   return (
-    <li className={`grid grid-cols-[3.25rem_1fr] border-b-2 ${toneClasses[view.tone]}`}>
-      <div className="border-r-2 border-current/20 px-3 py-4 text-right text-[10px] font-bold opacity-55">
+    <li className={`grid grid-cols-[3.25rem_1fr] border-b ${toneClasses[view.tone]} transition-colors`}>
+      <div className="border-r border-white/5 px-3 py-4 text-right text-[10px] font-medium opacity-40">
         {String(index).padStart(2, '0')}
       </div>
-      <div className="min-w-0 px-4 py-4 sm:px-5">
+      <div className="min-w-0 px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <span className="text-[11px] font-black uppercase tracking-[0.16em]">{view.label}</span>
-          <time className="text-[10px] font-bold opacity-50">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.1em]">{view.label}</span>
+          <time className="text-[10px] font-medium opacity-40 tracking-wider">
             {new Date(event.timestamp).toLocaleTimeString([], { hour12: false })}
           </time>
         </div>
-        <p className={`mt-2 text-sm leading-6 ${view.tone === 'accent' ? 'text-lg font-black sm:text-xl' : ''}`}>
-          {view.message}
-        </p>
+        <p className="mt-1.5 text-sm leading-relaxed">{view.message}</p>
         {view.detail ? (
-          <p className="mt-2 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.08em] opacity-55">
+          <p className="mt-2 text-[10px] font-medium uppercase tracking-widest opacity-60">
             {view.detail.startsWith('http') ? (
-              <a href={view.detail} target="_blank" rel="noopener noreferrer" className="underline hover:text-ink">
+              <a href={view.detail} target="_blank" rel="noopener noreferrer" className="underline hover:text-white">
                 {view.detail}
               </a>
             ) : (
@@ -412,9 +410,9 @@ function ProofFact({ label, value, last = false }: { label: string; value: strin
 }
 function StatusCell({ label, value, last = false }: { label: string; value: string; last?: boolean }) {
   return (
-    <div className={`px-4 py-3 ${last ? '' : 'border-b-2 border-ink sm:border-b-0 sm:border-r-2'}`}>
-      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-ink/55">{label}</p>
-      <p className="mt-1 truncate text-xs font-black uppercase">{value}</p>
+    <div className={`px-6 py-4 ${last ? '' : 'border-b border-white/10 sm:border-b-0 sm:border-r border-white/10'}`}>
+      <p className="text-[10px] font-medium uppercase tracking-widest text-white/40">{label}</p>
+      <p className="mt-1.5 truncate text-sm font-medium text-white/90">{value}</p>
     </div>
   );
 }
@@ -776,43 +774,44 @@ function AuditTrailPanel({ events }: { events: AgentEvent[] }) {
   if (events.length === 0) return null;
 
   return (
-    <div className="border-t-4 border-signal bg-paper text-ink p-4 sm:p-5">
-      <h3 className="mb-4 text-[11px] font-black uppercase tracking-[0.18em] text-signal">
+    <div className="border-t border-white/10 bg-[#0f111a] text-white p-6 sm:p-8">
+      <h3 className="mb-6 text-[10px] font-medium uppercase tracking-[0.15em] text-emerald-400/90 flex items-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80"></span>
         Audit Trail (Cryptographic & Financial Proof)
       </h3>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 gap-y-6 text-xs font-bold uppercase tracking-[0.05em]">
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Order ID</span>
-          <span className="mt-1">{shortId(trail.orderId)}</span>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 gap-y-8 text-sm font-medium tracking-wide">
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Order ID</span>
+          <span>{shortId(trail.orderId)}</span>
         </div>
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Exact Amount</span>
-          <span className="mt-1">{trail.amount}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Exact Amount</span>
+          <span>{trail.amount}</span>
         </div>
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Catalog Item</span>
-          <span className="mt-1">{trail.item}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Catalog Item</span>
+          <span>{trail.item}</span>
         </div>
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Final Status</span>
-          <span className="mt-1">{trail.finalStatus}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Final Status</span>
+          <span className={trail.finalStatus === 'FAILED' ? 'text-red-400' : 'text-emerald-400'}>{trail.finalStatus}</span>
         </div>
         
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Passkey Approved</span>
-          <span className="mt-1">{trail.passkeyTimestamp}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Passkey Approved</span>
+          <span>{trail.passkeyTimestamp}</span>
         </div>
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Payment Link (Expiry 15m)</span>
-          <span className="mt-1">{shortId(trail.paymentLinkId)}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Payment Link (15m)</span>
+          <span>{shortId(trail.paymentLinkId)}</span>
         </div>
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Webhook Rcvd</span>
-          <span className="mt-1">{trail.webhookTimestamp}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Webhook Rcvd</span>
+          <span>{trail.webhookTimestamp}</span>
         </div>
-        <div className="flex flex-col border-l-2 border-ink pl-3">
-          <span className="text-[9px] opacity-60">Signature Verified</span>
-          <span className="mt-1">{trail.webhookVerified ? 'TRUE' : '--'}</span>
+        <div className="flex flex-col border-l border-white/10 pl-4">
+          <span className="text-[10px] uppercase tracking-widest opacity-40 mb-1">Signature Verified</span>
+          <span className={trail.webhookVerified ? 'text-emerald-400' : 'text-white/40'}>{trail.webhookVerified ? 'TRUE' : '--'}</span>
         </div>
       </div>
     </div>

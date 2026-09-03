@@ -3,24 +3,18 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
-  background: #f4f1e8;
-  color: #11120f;
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html {
-  background: #f4f1e8;
-}
-
-body {
+html, body {
+  background: transparent;
+  color: white;
   min-height: 100vh;
   margin: 0;
-  background: #f4f1e8;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 button,
@@ -46,26 +40,26 @@ a {
 }
 
 ::selection {
-  background: #ff5c35;
-  color: #11120f;
+  background: #6366f1;
+  color: white;
 }
 
 .terminal-scroll {
-  scrollbar-color: #ff5c35 #11120f;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
   scrollbar-width: thin;
 }
 
 .terminal-scroll::-webkit-scrollbar {
-  width: 10px;
+  width: 6px;
 }
 
 .terminal-scroll::-webkit-scrollbar-track {
-  background: #11120f;
-  border-left: 1px solid rgba(244, 241, 232, 0.25);
+  background: transparent;
 }
 
 .terminal-scroll::-webkit-scrollbar-thumb {
-  background: #ff5c35;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
