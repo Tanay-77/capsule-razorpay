@@ -111,7 +111,7 @@ agentRouter.post('/provision', (req, res) => {
   if (!run.intent) return res.status(409).json({ error: 'Parse an intent before provisioning' });
   if (run.automationStarted) return res.status(409).json({ error: 'Provisioning already started for this run' });
 
-  const effectiveMode = process.env.ENABLE_MOCK_AGENT === 'true' ? 'mock' : requestedMode;
+  const effectiveMode = requestedMode;
   configureRun(run, effectiveMode, renewalDemoSeconds * 1_000, renewalDecisionSeconds * 1_000);
   run.automationStarted = true;
   startProvisioning(run, effectiveMode);

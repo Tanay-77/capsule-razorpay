@@ -77,7 +77,7 @@ export default async function StorePage() {
                 </div>
 
                 {product.constraints.length > 0 && (
-                  <div className="mt-auto border-t-2 border-dashed border-ink/30 pt-4">
+                  <div className="border-t-2 border-dashed border-ink/30 pt-4 mb-6">
                     <h3 className="mb-2 text-xs font-black uppercase tracking-widest text-ink/50">
                       Agent Constraints
                     </h3>
@@ -94,6 +94,13 @@ export default async function StorePage() {
                     </ul>
                   </div>
                 )}
+                
+                <a 
+                  href={`/?intent=${encodeURIComponent(`Get me 1x ${product.name}`)}`}
+                  className={`mt-auto block text-center border-2 border-ink bg-ink px-4 py-3 text-xs font-black uppercase tracking-widest text-paper hover:bg-signal hover:text-ink transition-colors`}
+                >
+                  Buy with Capsule &rarr;
+                </a>
               </div>
             ))}
           </div>

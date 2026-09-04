@@ -20,7 +20,7 @@ export class StoreProvisioner {
     intent: PurchaseIntent,
     requestedMode: AutomationMode,
   ): Promise<ProvisioningResult> {
-    const mode: AutomationMode = process.env.ENABLE_MOCK_AGENT === 'true' ? 'mock' : requestedMode;
+    const mode: AutomationMode = requestedMode;
     run.context.events.publish(run.context.runId, 'agent:automation_mode', { mode });
 
     try {

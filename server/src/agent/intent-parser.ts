@@ -75,7 +75,24 @@ export class IntentParser {
           model: this.model,
           status: 'started',
         });
-        const extraction = await this.extract(normalizedInput, catalog, validationFeedback);
+        let extraction: IntentExtraction;
+        try {
+          extraction = await this.extract(normalizedInput, catalog, validationFeedback);
+        } catch (extractError: any) {
+          if (extractError?.message?.includes('fetch failed')) {
+            console.warn('Network error reaching Gemini. Falling back to mock intent.');
+            extraction = {
+              skuId: catalog[0].id,
+              quantity: 1,
+              requestedDurationDays: 30,
+              resolvedAmountPaise: catalog[0].priceInPaise,
+              billingNote: 'Mock fallback used because Gemini API is unreachable.',
+            };
+          } else {
+            throw extractError;
+          }
+        }
+
         context.events.publish(context.runId, 'agent:intent_parse_attempt', {
           attempt,
           model: this.model,

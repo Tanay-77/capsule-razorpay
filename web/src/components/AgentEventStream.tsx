@@ -39,6 +39,7 @@ export function AgentEventStream({
   const [renewalApproving, setRenewalApproving] = useState(false);
   const [renewalError, setRenewalError] = useState<string>();
   const endRef = useRef<HTMLDivElement>(null);
+  const openedLinksRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!runId) {
@@ -57,6 +58,15 @@ export function AgentEventStream({
       const handler = (message: MessageEvent<string>) => {
         try {
           const event = JSON.parse(message.data) as AgentEvent;
+
+          const url = typeof event.payload.shortUrl === 'string' ? event.payload.shortUrl : undefined;
+          if ((event.type === 'agent:payment_link_created' || event.type === 'agent:upsell_payment_link_created') && url) {
+            if (!openedLinksRef.current.has(url)) {
+              openedLinksRef.current.add(url);
+              window.open(url, '_blank');
+            }
+          }
+
           setEvents((current) => {
             if (current.some((item) => item.id === event.id)) return current;
             return [...current, event].slice(-120);
