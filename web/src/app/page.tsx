@@ -89,8 +89,8 @@ export default function HomePage() {
             <span className="text-xl font-bold tracking-tight text-white/90">Capsule</span>
           </div>
           <nav className="hidden md:flex items-center justify-center gap-10 text-sm font-medium text-white/70">
-            <a href="/store" className="hover:text-white transition-colors">Store</a>
-            <a href={`${API_URL}/api/catalog`} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">Catalog</a>
+            <a href={`/store?merchantId=${merchantId}`} className="hover:text-white transition-colors">Store</a>
+            <a href={`${API_URL}/api/catalog?merchantId=${merchantId}`} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">Catalog</a>
             <a href="#" className="hover:text-white transition-colors">Security</a>
             <a href="#dashboard" className="hover:text-white transition-colors">Audit Trail</a>
           </nav>
@@ -213,25 +213,25 @@ export default function HomePage() {
 
       {/* Sleek Agent Dashboard rendered inline */}
       {runId && (
-        <div id="dashboard" className="w-full max-w-[1400px] mx-auto px-4 pb-20 animate-in fade-in slide-in-from-bottom-8 duration-700 relative z-20 scroll-mt-8">
+        <div id="dashboard" className="w-full max-w-[1400px] mx-auto px-4 mt-24 pb-20 animate-in fade-in slide-in-from-bottom-8 duration-700 relative z-20 scroll-mt-8">
           <header className="w-full flex items-center justify-between px-8 py-4 border border-white/20 border-b-0 bg-[#0f111a] rounded-t-3xl shadow-2xl">
             <div className="flex items-center gap-4">
               <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
               <span className="font-medium text-white/90 tracking-wide">Capsule Live Dashboard</span>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-10">
               <button 
                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} 
                 className="text-white/50 hover:text-white transition-colors text-sm font-medium flex items-center gap-1"
               >
                 &larr; Back to agent
               </button>
-              <a href="/store" className="text-white/50 hover:text-white transition-colors text-sm font-medium flex items-center gap-1">
+              <a href={`/store?merchantId=${merchantId}`} className="text-white/50 hover:text-white transition-colors text-sm font-medium flex items-center gap-1">
                 Browse store &rarr;
               </a>
               <button
                 onClick={() => setRunId(undefined)}
-                className="text-white/50 hover:text-white transition-colors text-sm font-medium ml-4 border-l border-white/10 pl-4"
+                className="text-white/50 hover:text-white transition-colors text-sm font-medium ml-2 border-l border-white/10 pl-8"
                 title="Close Dashboard"
               >
                 Close

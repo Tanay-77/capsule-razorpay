@@ -20,24 +20,30 @@ interface Product {
   constraints: ProductConstraint[];
 }
 
-async function getCatalog(): Promise<Product[]> {
+async function getCatalog(merchantId?: string): Promise<Product[]> {
   // Try fetching from the backend server
-  const res = await fetch('http://localhost:3001/api/catalog', { cache: 'no-store' });
+  const url = merchantId ? `http://localhost:3001/api/catalog?merchantId=${merchantId}` : 'http://localhost:3001/api/catalog';
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) {
     throw new Error('Failed to fetch catalog from backend');
   }
   return res.json();
 }
 
-export default async function StorePage() {
-  const products = await getCatalog().catch(() => [] as Product[]);
+export default async function StorePage({
+  searchParams,
+}: {
+  searchParams: { merchantId?: string };
+}) {
+  const merchantId = searchParams?.merchantId || 'capsule-demo-store';
+  const products = await getCatalog(merchantId).catch(() => [] as Product[]);
 
   return (
     <main className="min-h-screen bg-paper p-8 text-ink sm:p-12 md:p-24">
       <div className="mx-auto max-w-5xl">
         <header className="mb-12 border-b-4 border-ink pb-8">
           <h1 className="text-4xl font-black uppercase tracking-widest sm:text-6xl">
-            Capsule Store
+            {merchantId === 'cloudops-hosting' ? 'CloudOps Store' : 'Capsule Store'}
           </h1>
           <p className="mt-4 max-w-2xl text-lg font-bold uppercase tracking-wider text-ink/70">
             Demo Merchant Catalog. Ground truth for the IntentParser agent.
