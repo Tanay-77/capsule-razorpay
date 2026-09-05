@@ -85,17 +85,15 @@ export default function HomePage() {
         {/* Top Navigation matches reference */}
         <header className="w-full max-w-[1400px] mx-auto grid grid-cols-3 items-center px-8 py-8 z-10 relative">
           <div className="flex items-center gap-3 justify-start">
-            <img src="/capsule-logo.png" alt="Capsule Logo" className="h-8 w-auto object-contain" />
             <span className="text-xl font-bold tracking-tight text-white/90">Capsule</span>
           </div>
           <nav className="hidden md:flex items-center justify-center gap-10 text-sm font-medium text-white/70">
-            <a href={`/store?merchantId=${merchantId}`} className="hover:text-white transition-colors">Store</a>
             <a href={`${API_URL}/api/catalog?merchantId=${merchantId}`} target="_blank" rel="noreferrer" className="hover:text-white transition-colors">Catalog</a>
-            <a href="#" className="hover:text-white transition-colors">Security</a>
+            <a href="/how-it-works" className="hover:text-white transition-colors">How it works</a>
             <a href="#dashboard" className="hover:text-white transition-colors">Audit Trail</a>
           </nav>
           <div className="flex justify-end">
-            <a href="#" className="text-sm font-medium text-white/70 hover:text-white transition-colors">Dashboard</a>
+            <a href={`/store?merchantId=${merchantId}`} className="bg-white text-black px-5 py-2 rounded-full hover:bg-white/90 transition-colors text-sm font-semibold">Browse Store</a>
           </div>
         </header>
 
@@ -105,9 +103,9 @@ export default function HomePage() {
             The AI Purchasing Agent
           </h1>
           <p className="text-center text-white/70 max-w-2xl text-lg md:text-[1.1rem] mb-14 leading-relaxed font-light">
-          Capsule transforms natural language into secure, verifiable checkout flows.<br />
-          Streamlined agentic purchasing with cryptographic passkey approvals.
-        </p>
+            Capsule transforms natural language into secure, verifiable checkout flows.<br />
+            Streamlined agentic purchasing with cryptographic passkey approvals.
+          </p>
 
           {/* Glassmorphism Input Container */}
           <form
@@ -220,8 +218,8 @@ export default function HomePage() {
               <span className="font-medium text-white/90 tracking-wide">Capsule Live Dashboard</span>
             </div>
             <div className="flex items-center gap-10">
-              <button 
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} 
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 className="text-white/50 hover:text-white transition-colors text-sm font-medium flex items-center gap-1"
               >
                 &larr; Back to agent
