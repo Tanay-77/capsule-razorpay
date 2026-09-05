@@ -197,7 +197,7 @@ export default function HomePage() {
 
           <p className="mt-16 text-white/50 text-sm font-medium tracking-wide">
             <span className="inline-block w-1 h-1 rounded-full bg-white/50 mr-2 align-middle"></span>
-            Launch app 10x faster
+            {/* Launch app 10x faster */}
           </p>
 
           {error && (
